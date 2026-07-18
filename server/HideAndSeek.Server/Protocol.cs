@@ -24,6 +24,18 @@ public sealed class ClientMessage
 
     [JsonPropertyName("code")]
     public string? Code { get; set; }
+
+    [JsonPropertyName("x")]
+    public double? X { get; set; }
+
+    [JsonPropertyName("y")]
+    public double? Y { get; set; }
+
+    [JsonPropertyName("z")]
+    public double? Z { get; set; }
+
+    [JsonPropertyName("yaw")]
+    public double? Yaw { get; set; }
 }
 
 public static class ServerMessages
@@ -47,6 +59,35 @@ public static class ServerMessages
     {
         type = "matchStart",
         hideEndsAt,
+    };
+
+    public static object Phase(string phase, long endsAt) => new
+    {
+        type = "phase",
+        phase,
+        endsAt,
+    };
+
+    public static object Pose(string role, double x, double y, double z, double yaw) => new
+    {
+        type = "pose",
+        role,
+        x,
+        y,
+        z,
+        yaw,
+    };
+
+    public static object Spotted(bool active) => new
+    {
+        type = "spotted",
+        active,
+    };
+
+    public static object MatchEnd(string outcome) => new
+    {
+        type = "matchEnd",
+        outcome,
     };
 
     public static object PeerLeft() => new

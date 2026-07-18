@@ -1,6 +1,8 @@
 import {
   defaultWsUrl,
   type ClientMessage,
+  type MatchOutcome,
+  type PosePayload,
   type RoomState,
   type ServerMessage,
 } from "./protocol";
@@ -9,6 +11,10 @@ import type { Role } from "../types";
 export type NetHandlers = {
   onRoom?: (room: RoomState) => void;
   onMatchStart?: (hideEndsAt: number) => void;
+  onPhase?: (phase: "hiding" | "seeking", endsAt: number) => void;
+  onPose?: (pose: PosePayload) => void;
+  onSpotted?: (active: boolean) => void;
+  onMatchEnd?: (outcome: MatchOutcome) => void;
   onPeerLeft?: () => void;
   onError?: (message: string) => void;
   onOpen?: () => void;
@@ -79,9 +85,15 @@ export class NetClient {
     this.send({ type: "start" });
   }
 
+  sendPose(x: number, y: number, z: number, yaw: number): void {
+    this.send({ type: "pose", x, y, z, yaw });
+  }
+
   private send(message: ClientMessage): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      this.handlers.onError?.("Not connected to lobby server.");
+      if (message.type !== "pose" && message.type !== "leave") {
+        this.handlers.onError?.("Not connected to lobby server.");
+      }
       return;
     }
     this.socket.send(JSON.stringify(message));
@@ -102,6 +114,18 @@ export class NetClient {
         break;
       case "matchStart":
         this.handlers.onMatchStart?.(message.hideEndsAt);
+        break;
+      case "phase":
+        this.handlers.onPhase?.(message.phase, message.endsAt);
+        break;
+      case "pose":
+        this.handlers.onPose?.(message);
+        break;
+      case "spotted":
+        this.handlers.onSpotted?.(message.active);
+        break;
+      case "matchEnd":
+        this.handlers.onMatchEnd?.(message.outcome);
         break;
       case "peerLeft":
         this.handlers.onPeerLeft?.();

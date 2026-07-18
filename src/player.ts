@@ -129,6 +129,29 @@ export class Player {
     return this.body.position.add(new Vector3(0, EYE_HEIGHT - 0.85, 0));
   }
 
+  getPose(): { x: number; y: number; z: number; yaw: number } {
+    return {
+      x: this.body.position.x,
+      y: this.body.position.y,
+      z: this.body.position.z,
+      yaw: this.yaw,
+    };
+  }
+
+  /** Snap / lerp target for a remotely controlled hider body. */
+  setRemotePose(x: number, y: number, z: number, yaw: number, smooth = true): void {
+    if (smooth) {
+      this.body.position.x += (x - this.body.position.x) * 0.35;
+      this.body.position.y = y;
+      this.body.position.z += (z - this.body.position.z) * 0.35;
+      this.yaw += shortestAngle(yaw - this.yaw) * 0.35;
+    } else {
+      this.body.position.set(x, y, z);
+      this.yaw = yaw;
+    }
+    this.body.rotation.y = this.yaw;
+  }
+
   private syncCamera(): void {
     this.camera.position.set(this.body.position.x, EYE_HEIGHT, this.body.position.z);
     const look = new Vector3(
@@ -138,4 +161,10 @@ export class Player {
     );
     this.camera.setTarget(this.camera.position.add(look));
   }
+}
+
+function shortestAngle(delta: number): number {
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
 }

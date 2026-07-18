@@ -7,8 +7,6 @@ namespace HideAndSeek.Server;
 
 public sealed class RoomManager
 {
-    public const int HideSeconds = 12;
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -65,6 +63,9 @@ public sealed class RoomManager
                     case "start":
                         await StartAsync(socket, ct);
                         break;
+                    case "pose":
+                        await PoseAsync(socket, message, ct);
+                        break;
                     case "leave":
                         await LeaveAsync(socket, ct);
                         break;
@@ -96,6 +97,8 @@ public sealed class RoomManager
                     // Ignore close failures.
                 }
             }
+
+            RemoveSendGate(socket);
         }
     }
 
@@ -188,6 +191,7 @@ public sealed class RoomManager
         string? error = null;
         WebSocket? host = null;
         WebSocket? guest = null;
+        long hideEndsAt = 0;
         lock (room.Gate)
         {
             if (!ReferenceEquals(room.Host, socket))
@@ -205,8 +209,18 @@ public sealed class RoomManager
             else
             {
                 room.Started = true;
+                room.MatchPhase = MatchPhase.Hiding;
+                room.HiderPose = Pose.Empty;
+                room.SeekerPose = Pose.Empty;
+                room.Spotted = false;
+                hideEndsAt = DateTimeOffset.UtcNow.AddSeconds(MatchRules.HideSeconds).ToUnixTimeMilliseconds();
+                room.PhaseEndsAt = hideEndsAt;
+                room.SeekEndsAt = hideEndsAt + MatchRules.SeekSeconds * 1000L;
                 host = room.Host;
                 guest = room.Guest;
+                room.MatchCts?.Cancel();
+                room.MatchCts = new CancellationTokenSource();
+                _ = RunMatchLoopAsync(room, room.MatchCts.Token);
             }
         }
 
@@ -216,9 +230,216 @@ public sealed class RoomManager
             return;
         }
 
-        var hideEndsAt = DateTimeOffset.UtcNow.AddSeconds(HideSeconds).ToUnixTimeMilliseconds();
         var payload = ServerMessages.MatchStart(hideEndsAt);
         await SendAsync(host, payload, ct);
+        if (guest is not null)
+        {
+            await SendAsync(guest, payload, ct);
+        }
+    }
+
+    private async Task PoseAsync(WebSocket socket, ClientMessage message, CancellationToken ct)
+    {
+        if (!_socketRooms.TryGetValue(socket, out var code) || !_rooms.TryGetValue(code, out var room))
+        {
+            return;
+        }
+
+        if (message.X is null || message.Y is null || message.Z is null || message.Yaw is null)
+        {
+            return;
+        }
+
+        var pose = Pose.From(message.X.Value, message.Y.Value, message.Z.Value, message.Yaw.Value);
+        string? role = null;
+        WebSocket? peer = null;
+        var shouldRelay = false;
+
+        lock (room.Gate)
+        {
+            if (!room.Started || room.MatchPhase is not (MatchPhase.Hiding or MatchPhase.Seeking))
+            {
+                return;
+            }
+
+            if (ReferenceEquals(room.Host, socket))
+            {
+                role = room.HostRole;
+                peer = room.Guest;
+            }
+            else if (ReferenceEquals(room.Guest, socket))
+            {
+                role = room.GuestRole;
+                peer = room.Host;
+            }
+            else
+            {
+                return;
+            }
+
+            if (role == Roles.Hider)
+            {
+                room.HiderPose = pose;
+            }
+            else
+            {
+                room.SeekerPose = pose;
+            }
+
+            // Always relay seeker→hider; only reveal hider once seeking.
+            shouldRelay = role == Roles.Seeker || room.MatchPhase == MatchPhase.Seeking;
+        }
+
+        if (role is null || peer is null)
+        {
+            return;
+        }
+
+        if (shouldRelay)
+        {
+            await SendAsync(
+                peer,
+                ServerMessages.Pose(role, pose.X, pose.Y, pose.Z, pose.Yaw),
+                ct);
+        }
+
+        await EvaluateMatchAsync(room, ct);
+    }
+
+    private async Task RunMatchLoopAsync(Room room, CancellationToken ct)
+    {
+        var delay = TimeSpan.FromMilliseconds(1000.0 / MatchRules.PoseHz);
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(delay, ct);
+                await EvaluateMatchAsync(room, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Match ended or room torn down.
+        }
+    }
+
+    private async Task EvaluateMatchAsync(Room room, CancellationToken ct)
+    {
+        WebSocket? host;
+        WebSocket? guest;
+        MatchPhase phase;
+        long phaseEndsAt;
+        long seekEndsAt;
+        Pose hider;
+        Pose seeker;
+        var wasSpotted = false;
+
+        lock (room.Gate)
+        {
+            if (!room.Started || room.MatchPhase is MatchPhase.Ended or MatchPhase.Lobby)
+            {
+                return;
+            }
+
+            host = room.Host;
+            guest = room.Guest;
+            phase = room.MatchPhase;
+            phaseEndsAt = room.PhaseEndsAt;
+            seekEndsAt = room.SeekEndsAt;
+            hider = room.HiderPose;
+            seeker = room.SeekerPose;
+            wasSpotted = room.Spotted;
+        }
+
+        if (host is null || guest is null)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        if (phase == MatchPhase.Hiding && now >= phaseEndsAt)
+        {
+            lock (room.Gate)
+            {
+                if (room.MatchPhase != MatchPhase.Hiding)
+                {
+                    return;
+                }
+
+                room.MatchPhase = MatchPhase.Seeking;
+                room.PhaseEndsAt = seekEndsAt;
+                phase = MatchPhase.Seeking;
+                phaseEndsAt = seekEndsAt;
+            }
+
+            var seeking = ServerMessages.Phase("seeking", phaseEndsAt);
+            await SendAsync(host, seeking, ct);
+            await SendAsync(guest, seeking, ct);
+        }
+
+        if (phase == MatchPhase.Seeking)
+        {
+            if (hider.IsSet && seeker.IsSet)
+            {
+                var caught = MatchRules.TryCatch(seeker, hider, out var spotted);
+                if (spotted != wasSpotted)
+                {
+                    lock (room.Gate)
+                    {
+                        room.Spotted = spotted;
+                    }
+
+                    var spottedMsg = ServerMessages.Spotted(spotted);
+                    await SendAsync(host, spottedMsg, ct);
+                    await SendAsync(guest, spottedMsg, ct);
+                }
+
+                if (caught)
+                {
+                    await EndMatchAsync(room, "caught", ct);
+                    return;
+                }
+            }
+
+            if (now >= seekEndsAt)
+            {
+                await EndMatchAsync(room, "escaped", ct);
+            }
+        }
+    }
+
+    private async Task EndMatchAsync(Room room, string outcome, CancellationToken ct)
+    {
+        WebSocket? host;
+        WebSocket? guest;
+        lock (room.Gate)
+        {
+            if (room.MatchPhase == MatchPhase.Ended)
+            {
+                return;
+            }
+
+            room.MatchPhase = MatchPhase.Ended;
+            room.Started = false;
+            host = room.Host;
+            guest = room.Guest;
+            try
+            {
+                room.MatchCts?.Cancel();
+            }
+            catch
+            {
+                // Ignore.
+            }
+        }
+
+        var payload = ServerMessages.MatchEnd(outcome);
+        if (host is not null)
+        {
+            await SendAsync(host, payload, ct);
+        }
+
         if (guest is not null)
         {
             await SendAsync(guest, payload, ct);
@@ -248,15 +469,33 @@ public sealed class RoomManager
                 removeRoom = true;
                 room.Host = null!;
                 room.Guest = null;
+                room.MatchPhase = MatchPhase.Ended;
+                try
+                {
+                    room.MatchCts?.Cancel();
+                }
+                catch
+                {
+                    // Ignore.
+                }
             }
             else if (ReferenceEquals(room.Guest, socket))
             {
                 notify = room.Host;
                 room.Guest = null;
                 room.GuestRole = null;
-                if (room.Started)
+                if (room.Started || room.MatchPhase is MatchPhase.Hiding or MatchPhase.Seeking)
                 {
                     removeRoom = true;
+                    room.MatchPhase = MatchPhase.Ended;
+                    try
+                    {
+                        room.MatchCts?.Cancel();
+                    }
+                    catch
+                    {
+                        // Ignore.
+                    }
                 }
             }
             else
@@ -307,7 +546,55 @@ public sealed class RoomManager
         }
 
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, JsonOptions));
-        await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+        // Serialize sends per-socket; concurrent SendAsync is not safe.
+        var gate = SocketSendGates.GetOrAdd(socket, _ => new SemaphoreSlim(1, 1));
+        try
+        {
+            await gate.WaitAsync(ct);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (socket.State != WebSocketState.Open)
+            {
+                return;
+            }
+
+            await socket.SendAsync(bytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+        }
+        finally
+        {
+            try
+            {
+                gate.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Gate already cleaned up on disconnect.
+            }
+        }
+    }
+
+    private static void RemoveSendGate(WebSocket socket)
+    {
+        if (SocketSendGates.TryRemove(socket, out var gate))
+        {
+            gate.Dispose();
+        }
+    }
+
+    private static readonly ConcurrentDictionary<WebSocket, SemaphoreSlim> SocketSendGates = new();
+
+    private enum MatchPhase
+    {
+        Lobby,
+        Hiding,
+        Seeking,
+        Ended,
     }
 
     private sealed class Room
@@ -326,5 +613,12 @@ public sealed class RoomManager
         public WebSocket? Guest { get; set; }
         public string? GuestRole { get; set; }
         public bool Started { get; set; }
+        public MatchPhase MatchPhase { get; set; } = MatchPhase.Lobby;
+        public long PhaseEndsAt { get; set; }
+        public long SeekEndsAt { get; set; }
+        public Pose HiderPose { get; set; }
+        public Pose SeekerPose { get; set; }
+        public bool Spotted { get; set; }
+        public CancellationTokenSource? MatchCts { get; set; }
     }
 }

@@ -33,9 +33,9 @@ dotnet run --project server/HideAndSeek.Server
 
 Listens on `http://0.0.0.0:5080` (WebSocket path `/ws`). Use this together with `npm run dev` for local development.
 
-Then in the game: **Online** → create a room (pick Hider or Seeker) → share the code → guest joins → host taps **Start**. Both clients begin the hide timer from the same server timestamp.
+Then in the game: **Online** → create a room (pick Hider or Seeker) → share the code → guest joins → host taps **Start**. Both clients share the hide timer, see each other (~15 Hz poses), and catch / escape is decided on the server.
 
-Pose sync and catch rules across devices are [HS-4](https://pikachurro.atlassian.net/browse/HS-4). Mobile touch controls are [HS-5](https://pikachurro.atlassian.net/browse/HS-5).
+Mobile touch controls are [HS-5](https://pikachurro.atlassian.net/browse/HS-5). Reconnect after phone sleep is [HS-6](https://pikachurro.atlassian.net/browse/HS-6).
 
 ### Modes
 

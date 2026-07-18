@@ -166,7 +166,7 @@ export function setHintForSetup(mode: GameMode, role: Role): void {
   }
 
   const who = role === "hider" ? "Hider" : "Seeker";
-  hint.innerHTML = `${who}: WASD + mouse · Shift sprint<br />Esc releases the mouse · Online (poses sync later)`;
+  hint.innerHTML = `${who}: WASD + mouse · Shift sprint<br />Esc releases the mouse · Online sync on`;
 }
 
 function setOverlay(

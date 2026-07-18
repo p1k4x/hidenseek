@@ -4,7 +4,17 @@ export type ClientMessage =
   | { type: "create"; role: Role }
   | { type: "join"; code: string }
   | { type: "start" }
-  | { type: "leave" };
+  | { type: "leave" }
+  | { type: "pose"; x: number; y: number; z: number; yaw: number };
+
+export type PosePayload = {
+  type: "pose";
+  role: Role;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+};
 
 export type RoomState = {
   type: "room";
@@ -14,10 +24,16 @@ export type RoomState = {
   guestConnected: boolean;
 };
 
+export type MatchOutcome = "caught" | "escaped";
+
 export type ServerMessage =
   | RoomState
   | { type: "error"; message: string }
   | { type: "matchStart"; hideEndsAt: number }
+  | { type: "phase"; phase: "hiding" | "seeking"; endsAt: number }
+  | PosePayload
+  | { type: "spotted"; active: boolean }
+  | { type: "matchEnd"; outcome: MatchOutcome }
   | { type: "peerLeft" };
 
 export function defaultWsUrl(): string {

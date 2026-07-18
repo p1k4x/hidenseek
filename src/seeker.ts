@@ -129,6 +129,29 @@ export class Seeker {
     if (!active) this.keys.clear();
   }
 
+  getPose(): { x: number; y: number; z: number; yaw: number } {
+    return {
+      x: this.mesh.position.x,
+      y: this.mesh.position.y,
+      z: this.mesh.position.z,
+      yaw: this.yaw,
+    };
+  }
+
+  /** Snap / lerp target for a remotely controlled seeker body. */
+  setRemotePose(x: number, y: number, z: number, yaw: number, smooth = true): void {
+    if (smooth) {
+      this.mesh.position.x += (x - this.mesh.position.x) * 0.35;
+      this.mesh.position.y = y;
+      this.mesh.position.z += (z - this.mesh.position.z) * 0.35;
+      this.yaw += shortestAngle(yaw - this.yaw) * 0.35;
+    } else {
+      this.mesh.position.set(x, y, z);
+      this.yaw = yaw;
+    }
+    this.mesh.rotation.y = this.yaw;
+  }
+
   update(hiderPos: Vector3): { spotted: boolean; caught: boolean } {
     if (!this.hunting) {
       if (this.cameraEnabled) this.syncCamera();
@@ -301,4 +324,10 @@ export class Seeker {
 
     return !hit?.hit || (hit.distance ?? 0) >= distance - 0.5;
   }
+}
+
+function shortestAngle(delta: number): number {
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return delta;
 }
