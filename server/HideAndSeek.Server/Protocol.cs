@@ -25,6 +25,9 @@ public sealed class ClientMessage
     [JsonPropertyName("code")]
     public string? Code { get; set; }
 
+    [JsonPropertyName("sessionId")]
+    public string? SessionId { get; set; }
+
     [JsonPropertyName("x")]
     public double? X { get; set; }
 
@@ -40,13 +43,14 @@ public sealed class ClientMessage
 
 public static class ServerMessages
 {
-    public static object Room(string code, string role, bool isHost, bool guestConnected) => new
+    public static object Room(string code, string role, bool isHost, bool guestConnected, string sessionId) => new
     {
         type = "room",
         code,
         role,
         isHost,
         guestConnected,
+        sessionId,
     };
 
     public static object Error(string message) => new
@@ -93,5 +97,23 @@ public static class ServerMessages
     public static object PeerLeft() => new
     {
         type = "peerLeft",
+    };
+
+    public static object PeerReconnecting() => new
+    {
+        type = "peerReconnecting",
+    };
+
+    public static object PeerResumed() => new
+    {
+        type = "peerResumed",
+    };
+
+    public static object MatchResume(string phase, long endsAt, bool spotted) => new
+    {
+        type = "matchResume",
+        phase,
+        endsAt,
+        spotted,
     };
 }

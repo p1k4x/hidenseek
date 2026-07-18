@@ -3,6 +3,7 @@ import type { Role } from "../types";
 export type ClientMessage =
   | { type: "create"; role: Role }
   | { type: "join"; code: string }
+  | { type: "reconnect"; sessionId: string }
   | { type: "start" }
   | { type: "leave" }
   | { type: "pose"; x: number; y: number; z: number; yaw: number };
@@ -22,9 +23,17 @@ export type RoomState = {
   role: Role;
   isHost: boolean;
   guestConnected: boolean;
+  sessionId: string;
 };
 
 export type MatchOutcome = "caught" | "escaped";
+
+export type MatchResume = {
+  type: "matchResume";
+  phase: "hiding" | "seeking";
+  endsAt: number;
+  spotted: boolean;
+};
 
 export type ServerMessage =
   | RoomState
@@ -34,7 +43,10 @@ export type ServerMessage =
   | PosePayload
   | { type: "spotted"; active: boolean }
   | { type: "matchEnd"; outcome: MatchOutcome }
-  | { type: "peerLeft" };
+  | { type: "peerLeft" }
+  | { type: "peerReconnecting" }
+  | { type: "peerResumed" }
+  | MatchResume;
 
 export function defaultWsUrl(): string {
   const host = typeof location !== "undefined" ? location.hostname : "localhost";

@@ -91,6 +91,10 @@ export class Game {
       onRoom: (room) => {
         this.room = room;
         this.role = room.role;
+        // After WS resume mid-match, keep the arena up — don't flash the lobby.
+        if (this.phase === "hiding" || this.phase === "seeking") {
+          return;
+        }
         showLobby(room);
       },
       onMatchStart: (hideEndsAt) => {
@@ -114,23 +118,54 @@ export class Game {
       },
       onSpotted: (active) => {
         if (this.mode !== "online" || this.phase !== "seeking") return;
-        const detail = document.getElementById("phaseDetail");
-        if (!detail) return;
-        if (active) {
-          detail.textContent =
-            this.role === "seeker"
-              ? "You spotted the hider — close in!"
-              : "Spotted! The seeker is chasing you.";
-        } else {
-          detail.textContent =
-            this.role === "seeker"
-              ? "Find the hider before time runs out."
-              : "Stay out of the seeker's line of sight.";
-        }
+        this.setSpottedDetail(active);
       },
       onMatchEnd: (outcome) => {
         if (this.mode !== "online") return;
         this.endOnlineMatch(outcome);
+      },
+      onMatchResume: (resume) => {
+        if (this.mode !== "online") return;
+        this.applyMatchResume(resume);
+      },
+      onPeerReconnecting: () => {
+        if (this.phase === "hiding" || this.phase === "seeking") {
+          const detail = document.getElementById("phaseDetail");
+          if (detail) detail.textContent = "Opponent reconnecting…";
+          return;
+        }
+        if (this.room) {
+          showLobby(this.room, "Opponent reconnecting…");
+        }
+      },
+      onPeerResumed: () => {
+        if (this.phase === "hiding" || this.phase === "seeking") {
+          const detail = document.getElementById("phaseDetail");
+          if (detail) {
+            detail.textContent =
+              this.phase === "hiding"
+                ? this.role === "seeker"
+                  ? "Hider is finding cover. You unlock when the hunt starts."
+                  : "Get behind cover before the seeker wakes up."
+                : this.role === "seeker"
+                  ? "Find the hider before time runs out."
+                  : "Stay out of the seeker's line of sight.";
+          }
+          return;
+        }
+        if (this.room) {
+          showLobby(this.room);
+        }
+      },
+      onReconnecting: () => {
+        if (this.phase === "hiding" || this.phase === "seeking") {
+          const detail = document.getElementById("phaseDetail");
+          if (detail) detail.textContent = "Reconnecting…";
+          return;
+        }
+        if (this.room) {
+          showLobby(this.room, "Reconnecting…");
+        }
       },
       onPeerLeft: () => {
         if (this.phase === "hiding" || this.phase === "seeking") {
@@ -154,6 +189,17 @@ export class Game {
         }
       },
       onError: (message) => {
+        if (this.phase === "hiding" || this.phase === "seeking") {
+          this.phase = "idle";
+          this.remoteTarget = null;
+          this.remoteReady = false;
+          this.touch.hide();
+          document.exitPointerLock();
+          this.net.disconnect();
+          this.room = null;
+          showOnlineMenu(message);
+          return;
+        }
         const screen = getMenuScreen();
         if (screen === "join") {
           showJoinMenu(message);
@@ -305,18 +351,63 @@ export class Game {
     }
   }
 
-  private enterSeekingFromServer(endsAtUnixMs: number): void {
+  private enterSeekingFromServer(endsAtUnixMs: number, delayMs?: number): void {
+    const delay = delayMs ?? Math.max(0, endsAtUnixMs - Date.now());
     this.phase = "seeking";
-    const delayMs = Math.max(0, endsAtUnixMs - Date.now());
-    this.phaseEndsAt = performance.now() + delayMs;
+    this.phaseEndsAt = performance.now() + delay;
     if (this.role === "seeker") {
       this.seeker.setActive(true);
       this.player.body.isVisible = true;
     }
     this.player.setInputEnabled(this.role === "hider");
     this.lastSecond = -1;
-    const secondsLeft = Math.max(0, Math.ceil(delayMs / 1000));
+    const secondsLeft = Math.max(0, Math.ceil(delay / 1000));
     setPhaseUi(this.phase, secondsLeft, this.role);
+  }
+
+  private applyMatchResume(resume: { phase: "hiding" | "seeking"; endsAt: number; spotted: boolean }): void {
+    const delayMs = Math.max(0, resume.endsAt - Date.now());
+    this.lastSecond = -1;
+
+    if (resume.phase === "seeking" && this.phase !== "seeking") {
+      this.enterSeekingFromServer(resume.endsAt, delayMs);
+    } else if (resume.phase === "hiding") {
+      this.phase = "hiding";
+      this.phaseEndsAt = performance.now() + delayMs;
+      this.seeker.setActive(false);
+      this.player.setInputEnabled(this.role === "hider");
+      if (this.role === "seeker") {
+        this.player.body.isVisible = false;
+      }
+      const secondsLeft = Math.max(0, Math.ceil(delayMs / 1000));
+      setPhaseUi(this.phase, secondsLeft, this.role);
+    } else {
+      this.phaseEndsAt = performance.now() + delayMs;
+      const secondsLeft = Math.max(0, Math.ceil(delayMs / 1000));
+      setPhaseUi(this.phase, secondsLeft, this.role);
+    }
+
+    if (resume.phase === "seeking") {
+      this.setSpottedDetail(resume.spotted);
+    }
+
+    this.touch.show();
+  }
+
+  private setSpottedDetail(active: boolean): void {
+    const detail = document.getElementById("phaseDetail");
+    if (!detail) return;
+    if (active) {
+      detail.textContent =
+        this.role === "seeker"
+          ? "You spotted the hider — close in!"
+          : "Spotted! The seeker is chasing you.";
+    } else {
+      detail.textContent =
+        this.role === "seeker"
+          ? "Find the hider before time runs out."
+          : "Stay out of the seeker's line of sight.";
+    }
   }
 
   private update(): void {
@@ -400,8 +491,9 @@ export class Game {
   }
 
   private applyRemotePose(pose: PosePayload, smooth: boolean): void {
+    // Neither avatar is revealed during the hide phase.
+    if (this.phase === "hiding") return;
     if (pose.role === "hider") {
-      if (this.phase === "hiding") return;
       this.player.setRemotePose(pose.x, pose.y, pose.z, pose.yaw, smooth);
     } else {
       this.seeker.setRemotePose(pose.x, pose.y, pose.z, pose.yaw, smooth);

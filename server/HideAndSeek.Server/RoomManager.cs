@@ -7,6 +7,8 @@ namespace HideAndSeek.Server;
 
 public sealed class RoomManager
 {
+    private const int ReconnectGraceSeconds = 45;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -14,10 +16,12 @@ public sealed class RoomManager
 
     private readonly ConcurrentDictionary<string, Room> _rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<WebSocket, string> _socketRooms = new();
+    private readonly ConcurrentDictionary<string, string> _sessions = new(StringComparer.Ordinal);
 
     public async Task HandleSocketAsync(WebSocket socket, CancellationToken ct)
     {
         var buffer = new byte[4 * 1024];
+        var intentionalLeave = false;
 
         try
         {
@@ -60,6 +64,9 @@ public sealed class RoomManager
                     case "join":
                         await JoinAsync(socket, message.Code, ct);
                         break;
+                    case "reconnect":
+                        await ReconnectAsync(socket, message.SessionId, ct);
+                        break;
                     case "start":
                         await StartAsync(socket, ct);
                         break;
@@ -67,7 +74,8 @@ public sealed class RoomManager
                         await PoseAsync(socket, message, ct);
                         break;
                     case "leave":
-                        await LeaveAsync(socket, ct);
+                        intentionalLeave = true;
+                        await LeaveAsync(socket, intentional: true, ct);
                         break;
                     default:
                         await SendAsync(socket, ServerMessages.Error($"Unknown type: {message.Type}"), ct);
@@ -85,7 +93,11 @@ public sealed class RoomManager
         }
         finally
         {
-            await LeaveAsync(socket, CancellationToken.None);
+            if (!intentionalLeave)
+            {
+                await LeaveAsync(socket, intentional: false, CancellationToken.None);
+            }
+
             if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
                 try
@@ -110,10 +122,11 @@ public sealed class RoomManager
             return;
         }
 
-        await LeaveAsync(socket, ct);
+        await LeaveAsync(socket, intentional: true, ct);
 
         var code = NewCode();
-        var room = new Room(code, socket, role!);
+        var sessionId = NewSessionId();
+        var room = new Room(code, socket, role!, sessionId);
         if (!_rooms.TryAdd(code, room))
         {
             await SendAsync(socket, ServerMessages.Error("Could not create room."), ct);
@@ -121,7 +134,8 @@ public sealed class RoomManager
         }
 
         _socketRooms[socket] = code;
-        await SendAsync(socket, ServerMessages.Room(code, role!, isHost: true, guestConnected: false), ct);
+        _sessions[sessionId] = code;
+        await SendAsync(socket, ServerMessages.Room(code, role!, isHost: true, guestConnected: false, sessionId), ct);
     }
 
     private async Task JoinAsync(WebSocket socket, string? code, CancellationToken ct)
@@ -139,14 +153,16 @@ public sealed class RoomManager
             return;
         }
 
-        await LeaveAsync(socket, ct);
+        await LeaveAsync(socket, intentional: true, ct);
 
         string? error = null;
         string guestRole = "";
+        string sessionId = "";
         WebSocket? hostSocket = null;
         lock (room.Gate)
         {
-            if (room.Guest is not null)
+            var guestSeatTaken = room.Guest is not null || room.GuestSessionId is not null;
+            if (guestSeatTaken)
             {
                 error = "Room is full.";
             }
@@ -154,13 +170,20 @@ public sealed class RoomManager
             {
                 error = "Match already started.";
             }
+            else if (room.Host is null)
+            {
+                error = "Host is reconnecting. Try again shortly.";
+            }
             else
             {
                 guestRole = Roles.Opposite(room.HostRole);
+                sessionId = NewSessionId();
                 room.Guest = socket;
                 room.GuestRole = guestRole;
+                room.GuestSessionId = sessionId;
                 hostSocket = room.Host;
                 _socketRooms[socket] = code;
+                _sessions[sessionId] = code;
             }
         }
 
@@ -170,12 +193,132 @@ public sealed class RoomManager
             return;
         }
 
-        await SendAsync(socket, ServerMessages.Room(code, guestRole, isHost: false, guestConnected: true), ct);
+        await SendAsync(socket, ServerMessages.Room(code, guestRole, isHost: false, guestConnected: true, sessionId), ct);
         if (hostSocket is not null && hostSocket.State == WebSocketState.Open)
         {
             await SendAsync(
                 hostSocket,
-                ServerMessages.Room(code, room.HostRole, isHost: true, guestConnected: true),
+                ServerMessages.Room(code, room.HostRole, isHost: true, guestConnected: true, room.HostSessionId),
+                ct);
+        }
+    }
+
+    private async Task ReconnectAsync(WebSocket socket, string? sessionId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            await SendAsync(socket, ServerMessages.Error("Missing session."), ct);
+            return;
+        }
+
+        if (!_sessions.TryGetValue(sessionId, out var code) || !_rooms.TryGetValue(code, out var room))
+        {
+            await SendAsync(socket, ServerMessages.Error("Session expired. Create or join a new room."), ct);
+            return;
+        }
+
+        // Drop any other seat this socket might hold.
+        await LeaveAsync(socket, intentional: true, ct);
+
+        string? error = null;
+        var isHost = false;
+        string role = "";
+        MatchPhase phase = MatchPhase.Lobby;
+        long endsAt = 0;
+        var spotted = false;
+        var guestConnected = false;
+        WebSocket? peer = null;
+        Pose? peerPose = null;
+        string? peerNotifyRole = null;
+        string? peerNotifySessionId = null;
+
+        lock (room.Gate)
+        {
+            if (sessionId == room.HostSessionId)
+            {
+                if (room.Host is not null && room.Host.State == WebSocketState.Open)
+                {
+                    error = "Already connected from another tab.";
+                }
+                else
+                {
+                    CancelGrace(room, isHost: true);
+                    room.Host = socket;
+                    isHost = true;
+                    role = room.HostRole;
+                    peer = room.Guest;
+                    peerNotifyRole = room.GuestRole;
+                    peerNotifySessionId = room.GuestSessionId;
+                    _socketRooms[socket] = code;
+                }
+            }
+            else if (sessionId == room.GuestSessionId)
+            {
+                if (room.Guest is not null && room.Guest.State == WebSocketState.Open)
+                {
+                    error = "Already connected from another tab.";
+                }
+                else
+                {
+                    CancelGrace(room, isHost: false);
+                    room.Guest = socket;
+                    isHost = false;
+                    role = room.GuestRole ?? Roles.Opposite(room.HostRole);
+                    peer = room.Host;
+                    peerNotifyRole = room.HostRole;
+                    peerNotifySessionId = room.HostSessionId;
+                    _socketRooms[socket] = code;
+                }
+            }
+            else
+            {
+                error = "Session expired. Create or join a new room.";
+            }
+
+            if (error is null)
+            {
+                phase = room.MatchPhase;
+                endsAt = room.PhaseEndsAt;
+                spotted = room.Spotted;
+                guestConnected = room.Guest is not null || room.GuestSessionId is not null;
+                if (phase is MatchPhase.Hiding or MatchPhase.Seeking)
+                {
+                    var mineIsHider = role == Roles.Hider;
+                    var theirs = mineIsHider ? room.SeekerPose : room.HiderPose;
+                    if (theirs.IsSet)
+                    {
+                        peerPose = theirs;
+                    }
+                }
+            }
+        }
+
+        if (error is not null)
+        {
+            await SendAsync(socket, ServerMessages.Error(error), ct);
+            return;
+        }
+
+        await SendAsync(socket, ServerMessages.Room(code, role, isHost, guestConnected, sessionId), ct);
+
+        if (phase is MatchPhase.Hiding or MatchPhase.Seeking)
+        {
+            var phaseName = phase == MatchPhase.Hiding ? "hiding" : "seeking";
+            await SendAsync(socket, ServerMessages.MatchResume(phaseName, endsAt, spotted), ct);
+            // No peer poses during hide — neither side should see the other until seeking.
+            if (peerPose is { } pose && phase == MatchPhase.Seeking)
+            {
+                var peerRole = role == Roles.Hider ? Roles.Seeker : Roles.Hider;
+                await SendAsync(socket, ServerMessages.Pose(peerRole, pose.X, pose.Y, pose.Z, pose.Yaw), ct);
+            }
+        }
+
+        if (peer is not null && peer.State == WebSocketState.Open && peerNotifyRole is not null && peerNotifySessionId is not null)
+        {
+            await SendAsync(peer, ServerMessages.PeerResumed(), ct);
+            await SendAsync(
+                peer,
+                ServerMessages.Room(code, peerNotifyRole, isHost: !isHost, guestConnected: true, peerNotifySessionId),
                 ct);
         }
     }
@@ -286,16 +429,16 @@ public sealed class RoomManager
                 room.SeekerPose = pose;
             }
 
-            // Always relay seeker→hider; only reveal hider once seeking.
-            shouldRelay = role == Roles.Seeker || room.MatchPhase == MatchPhase.Seeking;
+            // Reveal neither side until seeking starts.
+            shouldRelay = room.MatchPhase == MatchPhase.Seeking;
         }
 
-        if (role is null || peer is null)
+        if (role is null)
         {
             return;
         }
 
-        if (shouldRelay)
+        if (shouldRelay && peer is not null)
         {
             await SendAsync(
                 peer,
@@ -351,11 +494,6 @@ public sealed class RoomManager
             wasSpotted = room.Spotted;
         }
 
-        if (host is null || guest is null)
-        {
-            return;
-        }
-
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         if (phase == MatchPhase.Hiding && now >= phaseEndsAt)
@@ -374,13 +512,15 @@ public sealed class RoomManager
             }
 
             var seeking = ServerMessages.Phase("seeking", phaseEndsAt);
-            await SendAsync(host, seeking, ct);
-            await SendAsync(guest, seeking, ct);
+            await SendToSeatAsync(host, seeking, ct);
+            await SendToSeatAsync(guest, seeking, ct);
         }
 
         if (phase == MatchPhase.Seeking)
         {
-            if (hider.IsSet && seeker.IsSet)
+            // Skip catch/spotted while a seat is vacant (reconnect grace) — poses go stale.
+            // Phase clock and escape timeout still run.
+            if (host is not null && guest is not null && hider.IsSet && seeker.IsSet)
             {
                 var caught = MatchRules.TryCatch(seeker, hider, out var spotted);
                 if (spotted != wasSpotted)
@@ -391,8 +531,8 @@ public sealed class RoomManager
                     }
 
                     var spottedMsg = ServerMessages.Spotted(spotted);
-                    await SendAsync(host, spottedMsg, ct);
-                    await SendAsync(guest, spottedMsg, ct);
+                    await SendToSeatAsync(host, spottedMsg, ct);
+                    await SendToSeatAsync(guest, spottedMsg, ct);
                 }
 
                 if (caught)
@@ -435,18 +575,11 @@ public sealed class RoomManager
         }
 
         var payload = ServerMessages.MatchEnd(outcome);
-        if (host is not null)
-        {
-            await SendAsync(host, payload, ct);
-        }
-
-        if (guest is not null)
-        {
-            await SendAsync(guest, payload, ct);
-        }
+        await SendToSeatAsync(host, payload, ct);
+        await SendToSeatAsync(guest, payload, ct);
     }
 
-    private async Task LeaveAsync(WebSocket socket, CancellationToken ct)
+    private async Task LeaveAsync(WebSocket socket, bool intentional, CancellationToken ct)
     {
         if (!_socketRooms.TryRemove(socket, out var code))
         {
@@ -458,8 +591,93 @@ public sealed class RoomManager
             return;
         }
 
+        if (!intentional)
+        {
+            await SoftDisconnectAsync(socket, room, code, ct);
+            return;
+        }
+
+        await HardDisconnectAsync(socket, room, code, ct);
+    }
+
+    private async Task SoftDisconnectAsync(WebSocket socket, Room room, string code, CancellationToken ct)
+    {
+        WebSocket? notify = null;
+        var startedGrace = false;
+
+        lock (room.Gate)
+        {
+            if (ReferenceEquals(room.Host, socket))
+            {
+                room.Host = null;
+                notify = room.Guest;
+                CancelGrace(room, isHost: true);
+                room.HostGraceCts = new CancellationTokenSource();
+                startedGrace = true;
+                _ = ExpireGraceAsync(room, code, isHost: true, room.HostGraceCts.Token);
+            }
+            else if (ReferenceEquals(room.Guest, socket))
+            {
+                room.Guest = null;
+                notify = room.Host;
+                CancelGrace(room, isHost: false);
+                room.GuestGraceCts = new CancellationTokenSource();
+                startedGrace = true;
+                _ = ExpireGraceAsync(room, code, isHost: false, room.GuestGraceCts.Token);
+            }
+        }
+
+        if (!startedGrace)
+        {
+            return;
+        }
+
+        if (notify is not null && notify.State == WebSocketState.Open)
+        {
+            await SendAsync(notify, ServerMessages.PeerReconnecting(), ct);
+        }
+    }
+
+    private async Task ExpireGraceAsync(Room room, string code, bool isHost, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(ReconnectGraceSeconds), ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (!_rooms.TryGetValue(code, out var still) || !ReferenceEquals(still, room))
+        {
+            return;
+        }
+
+        lock (room.Gate)
+        {
+            if (isHost)
+            {
+                if (room.Host is not null)
+                {
+                    return;
+                }
+            }
+            else if (room.Guest is not null)
+            {
+                return;
+            }
+        }
+
+        await HardLeaveSeatAsync(room, code, isHost, CancellationToken.None);
+    }
+
+    private async Task HardDisconnectAsync(WebSocket socket, Room room, string code, CancellationToken ct)
+    {
         WebSocket? notify = null;
         var removeRoom = false;
+        string? clearSession = null;
+        string? clearPeerSession = null;
 
         lock (room.Gate)
         {
@@ -467,8 +685,14 @@ public sealed class RoomManager
             {
                 notify = room.Guest;
                 removeRoom = true;
-                room.Host = null!;
+                clearSession = room.HostSessionId;
+                clearPeerSession = room.GuestSessionId;
+                CancelGrace(room, isHost: true);
+                CancelGrace(room, isHost: false);
+                room.Host = null;
                 room.Guest = null;
+                room.GuestSessionId = null;
+                room.GuestRole = null;
                 room.MatchPhase = MatchPhase.Ended;
                 try
                 {
@@ -482,11 +706,15 @@ public sealed class RoomManager
             else if (ReferenceEquals(room.Guest, socket))
             {
                 notify = room.Host;
+                clearSession = room.GuestSessionId;
+                CancelGrace(room, isHost: false);
                 room.Guest = null;
+                room.GuestSessionId = null;
                 room.GuestRole = null;
                 if (room.Started || room.MatchPhase is MatchPhase.Hiding or MatchPhase.Seeking)
                 {
                     removeRoom = true;
+                    clearPeerSession = room.HostSessionId;
                     room.MatchPhase = MatchPhase.Ended;
                     try
                     {
@@ -504,9 +732,98 @@ public sealed class RoomManager
             }
         }
 
+        await FinishHardLeaveAsync(code, notify, removeRoom, clearSession, clearPeerSession, ct);
+    }
+
+    /// <summary>Grace timer expired with seat still vacant.</summary>
+    private async Task HardLeaveSeatAsync(Room room, string code, bool isHost, CancellationToken ct)
+    {
+        WebSocket? notify = null;
+        var removeRoom = false;
+        string? clearSession = null;
+        string? clearPeerSession = null;
+
+        lock (room.Gate)
+        {
+            if (isHost)
+            {
+                if (room.Host is not null)
+                {
+                    return;
+                }
+
+                notify = room.Guest;
+                removeRoom = true;
+                clearSession = room.HostSessionId;
+                clearPeerSession = room.GuestSessionId;
+                CancelGrace(room, isHost: true);
+                CancelGrace(room, isHost: false);
+                room.Guest = null;
+                room.GuestSessionId = null;
+                room.GuestRole = null;
+                room.MatchPhase = MatchPhase.Ended;
+                try
+                {
+                    room.MatchCts?.Cancel();
+                }
+                catch
+                {
+                    // Ignore.
+                }
+            }
+            else
+            {
+                if (room.Guest is not null)
+                {
+                    return;
+                }
+
+                notify = room.Host;
+                clearSession = room.GuestSessionId;
+                CancelGrace(room, isHost: false);
+                room.GuestSessionId = null;
+                room.GuestRole = null;
+                if (room.Started || room.MatchPhase is MatchPhase.Hiding or MatchPhase.Seeking)
+                {
+                    removeRoom = true;
+                    clearPeerSession = room.HostSessionId;
+                    room.MatchPhase = MatchPhase.Ended;
+                    try
+                    {
+                        room.MatchCts?.Cancel();
+                    }
+                    catch
+                    {
+                        // Ignore.
+                    }
+                }
+            }
+        }
+
+        await FinishHardLeaveAsync(code, notify, removeRoom, clearSession, clearPeerSession, ct);
+    }
+
+    private async Task FinishHardLeaveAsync(
+        string code,
+        WebSocket? notify,
+        bool removeRoom,
+        string? clearSession,
+        string? clearPeerSession,
+        CancellationToken ct)
+    {
+        if (clearSession is not null)
+        {
+            _sessions.TryRemove(clearSession, out _);
+        }
+
         if (removeRoom)
         {
             _rooms.TryRemove(code, out _);
+            if (clearPeerSession is not null)
+            {
+                _sessions.TryRemove(clearPeerSession, out _);
+            }
+
             if (notify is not null)
             {
                 _socketRooms.TryRemove(notify, out _);
@@ -520,9 +837,30 @@ public sealed class RoomManager
             {
                 await SendAsync(
                     notify,
-                    ServerMessages.Room(code, stillThere.HostRole, isHost: true, guestConnected: false),
+                    ServerMessages.Room(code, stillThere.HostRole, isHost: true, guestConnected: false, stillThere.HostSessionId),
                     ct);
             }
+        }
+    }
+
+    private static void CancelGrace(Room room, bool isHost)
+    {
+        try
+        {
+            if (isHost)
+            {
+                room.HostGraceCts?.Cancel();
+                room.HostGraceCts = null;
+            }
+            else
+            {
+                room.GuestGraceCts?.Cancel();
+                room.GuestGraceCts = null;
+            }
+        }
+        catch
+        {
+            // Ignore.
         }
     }
 
@@ -536,6 +874,18 @@ public sealed class RoomManager
         }
 
         return new string(chars);
+    }
+
+    private static string NewSessionId() => Guid.NewGuid().ToString("N");
+
+    private static async Task SendToSeatAsync(WebSocket? socket, object payload, CancellationToken ct)
+    {
+        if (socket is null)
+        {
+            return;
+        }
+
+        await SendAsync(socket, payload, ct);
     }
 
     private static async Task SendAsync(WebSocket socket, object payload, CancellationToken ct)
@@ -599,19 +949,22 @@ public sealed class RoomManager
 
     private sealed class Room
     {
-        public Room(string code, WebSocket host, string hostRole)
+        public Room(string code, WebSocket host, string hostRole, string hostSessionId)
         {
             Code = code;
             Host = host;
             HostRole = hostRole;
+            HostSessionId = hostSessionId;
         }
 
         public string Code { get; }
         public object Gate { get; } = new();
-        public WebSocket Host { get; set; }
+        public WebSocket? Host { get; set; }
         public string HostRole { get; }
+        public string HostSessionId { get; }
         public WebSocket? Guest { get; set; }
         public string? GuestRole { get; set; }
+        public string? GuestSessionId { get; set; }
         public bool Started { get; set; }
         public MatchPhase MatchPhase { get; set; } = MatchPhase.Lobby;
         public long PhaseEndsAt { get; set; }
@@ -620,5 +973,7 @@ public sealed class RoomManager
         public Pose SeekerPose { get; set; }
         public bool Spotted { get; set; }
         public CancellationTokenSource? MatchCts { get; set; }
+        public CancellationTokenSource? HostGraceCts { get; set; }
+        public CancellationTokenSource? GuestGraceCts { get; set; }
     }
 }
