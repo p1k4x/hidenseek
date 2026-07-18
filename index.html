@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Hide & Seek</title>
     <style>
       * {
@@ -18,6 +18,9 @@
         overflow: hidden;
         background: #0b1220;
         font-family: "Segoe UI", system-ui, sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
       }
 
       #renderCanvas {
@@ -95,6 +98,16 @@
         font-size: 0.85rem;
         line-height: 1.45;
         opacity: 0.8;
+      }
+
+      #hint.touchHint {
+        left: 50%;
+        bottom: auto;
+        top: 4.75rem;
+        transform: translateX(-50%);
+        text-align: center;
+        max-width: min(22rem, 92vw);
+        font-size: 0.8rem;
       }
 
       #overlay {
@@ -202,6 +215,80 @@
 
       #overlayExtra input:focus {
         border-color: #7dd3fc;
+      }
+
+      #touchControls {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      #touchControls.hidden {
+        display: none;
+      }
+
+      .touch-stick {
+        position: absolute;
+        left: max(1.25rem, env(safe-area-inset-left));
+        bottom: max(1.5rem, env(safe-area-inset-bottom));
+        width: 7.5rem;
+        height: 7.5rem;
+        pointer-events: auto;
+        touch-action: none;
+      }
+
+      .touch-stick-ring {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 2px solid rgba(232, 238, 252, 0.35);
+        background: rgba(8, 14, 28, 0.35);
+      }
+
+      .touch-stick-knob {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(125, 211, 252, 0.75);
+        border: 2px solid rgba(232, 238, 252, 0.55);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      }
+
+      .touch-look {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 55%;
+        height: 100%;
+        pointer-events: auto;
+        touch-action: none;
+      }
+
+      .touch-sprint {
+        position: absolute;
+        right: max(1.25rem, env(safe-area-inset-right));
+        bottom: max(1.5rem, env(safe-area-inset-bottom));
+        pointer-events: auto;
+        touch-action: none;
+        border: 2px solid rgba(232, 238, 252, 0.4);
+        border-radius: 999px;
+        padding: 0.85rem 1.25rem;
+        font-size: 0.95rem;
+        font-weight: 650;
+        color: #e8eefc;
+        background: rgba(8, 14, 28, 0.45);
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+      }
+
+      .touch-sprint.active {
+        background: rgba(125, 211, 252, 0.55);
+        color: #0b1220;
+        text-shadow: none;
       }
     </style>
   </head>

@@ -1,5 +1,6 @@
 import type { GameMode, Phase, Role } from "./types";
 import type { RoomState } from "./net/protocol";
+import { prefersTouchControls } from "./touch";
 
 export type MenuScreen =
   | "mode"
@@ -159,6 +160,16 @@ export function getJoinCode(): string {
 export function setHintForSetup(mode: GameMode, role: Role): void {
   const hint = document.getElementById("hint");
   if (!hint) return;
+
+  if (prefersTouchControls()) {
+    hint.classList.add("touchHint");
+    const who = mode === "online" ? (role === "hider" ? "Hider" : "Seeker") : null;
+    const prefix = who ? `${who}: ` : "";
+    hint.innerHTML = `${prefix}Left stick move · drag right to look<br />Hold Sprint · no mouse needed`;
+    return;
+  }
+
+  hint.classList.remove("touchHint");
 
   if (mode === "solo") {
     hint.innerHTML = "WASD move · mouse look · Shift sprint<br />Esc releases the mouse";

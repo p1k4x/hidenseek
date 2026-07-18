@@ -8,6 +8,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { SCHEMES, anyPressed, type ControlScheme } from "./types";
+import type { TouchSample } from "./touch";
 
 const WALK_SPEED = 0.09;
 const CHASE_SPEED = 0.14;
@@ -152,19 +153,33 @@ export class Seeker {
     this.mesh.rotation.y = this.yaw;
   }
 
-  update(hiderPos: Vector3): { spotted: boolean; caught: boolean } {
+  update(hiderPos: Vector3, touch: TouchSample | null = null): { spotted: boolean; caught: boolean } {
     if (!this.hunting) {
+      if (this.human && this.cameraEnabled && touch) {
+        this.yaw += touch.lookYaw;
+        this.pitch -= touch.lookPitch;
+        this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
+      }
       if (this.cameraEnabled) this.syncCamera();
       return { spotted: false, caught: false };
     }
 
     if (this.human) {
-      return this.updateHuman(hiderPos);
+      return this.updateHuman(hiderPos, touch);
     }
     return this.updateAi(hiderPos);
   }
 
-  private updateHuman(hiderPos: Vector3): { spotted: boolean; caught: boolean } {
+  private updateHuman(
+    hiderPos: Vector3,
+    touch: TouchSample | null,
+  ): { spotted: boolean; caught: boolean } {
+    if (this.cameraEnabled && touch) {
+      this.yaw += touch.lookYaw;
+      this.pitch -= touch.lookPitch;
+      this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
+    }
+
     if (this.inputEnabled) {
       const map = SCHEMES[this.scheme];
       if (anyPressed(this.keys, map.turnLeft)) this.yaw -= HUMAN_TURN;
@@ -172,7 +187,7 @@ export class Seeker {
 
       const forward = new Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
       const right = new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-      const sprint = anyPressed(this.keys, map.sprint);
+      const sprint = anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint);
       const speed = HUMAN_SPEED * (sprint ? HUMAN_SPRINT : 1);
       const move = Vector3.Zero();
 
@@ -180,6 +195,11 @@ export class Seeker {
       if (anyPressed(this.keys, map.back)) move.addInPlace(forward.scale(-1));
       if (anyPressed(this.keys, map.right)) move.addInPlace(right);
       if (anyPressed(this.keys, map.left)) move.addInPlace(right.scale(-1));
+
+      if (touch) {
+        move.addInPlace(forward.scale(touch.moveZ));
+        move.addInPlace(right.scale(touch.moveX));
+      }
 
       if (move.lengthSquared() > 0.0001) {
         move.normalize().scaleInPlace(speed);

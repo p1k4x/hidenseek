@@ -5,6 +5,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
+import type { TouchSample } from "./touch";
 import { SCHEMES, anyPressed, type ControlScheme } from "./types";
 
 const MOVE_SPEED = 0.18;
@@ -94,7 +95,14 @@ export class Player {
     this.syncCamera();
   }
 
-  update(): void {
+  update(touch: TouchSample | null = null): void {
+    // Look works whenever we own the camera (including wait / hide).
+    if (this.cameraEnabled && touch) {
+      this.yaw += touch.lookYaw;
+      this.pitch -= touch.lookPitch;
+      this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch));
+    }
+
     if (!this.inputEnabled) {
       if (this.cameraEnabled) this.syncCamera();
       return;
@@ -107,7 +115,7 @@ export class Player {
     const forward = new Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const right = new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
-    const sprint = anyPressed(this.keys, map.sprint);
+    const sprint = anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint);
     const speed = MOVE_SPEED * (sprint ? SPRINT_MULT : 1);
     const move = Vector3.Zero();
 
@@ -115,6 +123,11 @@ export class Player {
     if (anyPressed(this.keys, map.back)) move.addInPlace(forward.scale(-1));
     if (anyPressed(this.keys, map.right)) move.addInPlace(right);
     if (anyPressed(this.keys, map.left)) move.addInPlace(right.scale(-1));
+
+    if (touch) {
+      move.addInPlace(forward.scale(touch.moveZ));
+      move.addInPlace(right.scale(touch.moveX));
+    }
 
     if (move.lengthSquared() > 0.0001) {
       move.normalize().scaleInPlace(speed);

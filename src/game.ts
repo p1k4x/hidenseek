@@ -12,6 +12,7 @@ import { NetClient } from "./net/client";
 import type { MatchOutcome, PosePayload, RoomState } from "./net/protocol";
 import { Player } from "./player";
 import { Seeker } from "./seeker";
+import { TouchControls } from "./touch";
 import type { GameMode, Phase, Role } from "./types";
 import {
   bindMenuClicks,
@@ -39,6 +40,7 @@ export class Game {
   private readonly hiderSpawn: Vector3;
   private readonly seekerSpawn: Vector3;
   private readonly net = new NetClient();
+  private readonly touch = new TouchControls();
   private mode: GameMode = "solo";
   private role: Role = "hider";
   private phase: Phase = "idle";
@@ -135,6 +137,7 @@ export class Game {
           this.phase = "idle";
           this.remoteTarget = null;
           this.remoteReady = false;
+          this.touch.hide();
           document.exitPointerLock();
           this.net.disconnect();
           this.room = null;
@@ -196,6 +199,7 @@ export class Game {
         this.phase = "idle";
         this.remoteTarget = null;
         this.remoteReady = false;
+        this.touch.hide();
         this.net.disconnect();
         this.room = null;
         showModeMenu();
@@ -203,6 +207,7 @@ export class Game {
     });
 
     this.canvas.addEventListener("click", () => {
+      if (this.touch.available) return;
       if (this.phase === "hiding" || this.phase === "seeking") {
         void this.canvas.requestPointerLock();
       }
@@ -294,7 +299,10 @@ export class Game {
     setPhaseUi(this.phase, secondsLeft, this.role);
 
     this.canvas.focus();
-    void this.canvas.requestPointerLock();
+    this.touch.show();
+    if (!this.touch.available) {
+      void this.canvas.requestPointerLock();
+    }
   }
 
   private enterSeekingFromServer(endsAtUnixMs: number): void {
@@ -312,14 +320,16 @@ export class Game {
   }
 
   private update(): void {
+    const touch = this.touch.sample();
+
     if (this.mode === "online" && (this.phase === "hiding" || this.phase === "seeking")) {
-      this.updateOnline();
+      this.updateOnline(touch);
       return;
     }
 
     if (this.phase === "hiding" || this.phase === "seeking") {
       if (this.role === "hider") {
-        this.player.update();
+        this.player.update(touch);
       }
     }
 
@@ -341,7 +351,7 @@ export class Game {
     }
 
     if (this.phase === "seeking") {
-      const { spotted, caught } = this.seeker.update(this.player.position);
+      const { spotted, caught } = this.seeker.update(this.player.position, touch);
       if (caught) {
         this.endRound(this.role === "seeker" ? "won" : "lost");
         return;
@@ -361,14 +371,14 @@ export class Game {
     }
   }
 
-  private updateOnline(): void {
+  private updateOnline(touch: ReturnType<TouchControls["sample"]>): void {
     const now = performance.now();
 
     if (this.role === "hider") {
-      this.player.update();
+      this.player.update(touch);
     } else {
       // Local seeker: move/look; catch is decided on the server.
-      this.seeker.update(this.player.position);
+      this.seeker.update(this.player.position, touch);
     }
 
     if (this.remoteTarget) {
@@ -410,6 +420,7 @@ export class Game {
     this.seeker.setActive(false);
     this.remoteTarget = null;
     this.remoteReady = false;
+    this.touch.hide();
     document.exitPointerLock();
     setPhaseUi(result, 0, this.role);
 
