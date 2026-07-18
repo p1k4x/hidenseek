@@ -1,0 +1,7 @@
+services:
+  hidenseek:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080

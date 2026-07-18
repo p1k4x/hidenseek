@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hide & Seek</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1220;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+
+      #renderCanvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        outline: none;
+        touch-action: none;
+      }
+
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        color: #e8eefc;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+      }
+
+      #crosshair {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 14px;
+        height: 14px;
+        transform: translate(-50%, -50%);
+        opacity: 0.85;
+      }
+
+      #crosshair::before,
+      #crosshair::after {
+        content: "";
+        position: absolute;
+        background: #e8eefc;
+      }
+
+      #crosshair::before {
+        left: 6px;
+        top: 0;
+        width: 2px;
+        height: 14px;
+      }
+
+      #crosshair::after {
+        left: 0;
+        top: 6px;
+        width: 14px;
+        height: 2px;
+      }
+
+      #status {
+        position: absolute;
+        top: 1.25rem;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        max-width: min(36rem, 92vw);
+      }
+
+      #status h1 {
+        font-size: clamp(1.1rem, 2.5vw, 1.6rem);
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+
+      #status p {
+        margin-top: 0.35rem;
+        font-size: 0.95rem;
+        opacity: 0.9;
+      }
+
+      #hint {
+        position: absolute;
+        left: 1.25rem;
+        bottom: 1.25rem;
+        font-size: 0.85rem;
+        line-height: 1.45;
+        opacity: 0.8;
+      }
+
+      #overlay {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(ellipse at center, rgba(20, 40, 80, 0.55), rgba(5, 10, 20, 0.88)),
+          #0b1220;
+        color: #e8eefc;
+        pointer-events: auto;
+        z-index: 2;
+      }
+
+      #overlay.hidden {
+        display: none;
+      }
+
+      #overlay .panel {
+        text-align: center;
+        padding: 2rem;
+        max-width: 32rem;
+      }
+
+      #overlay h1 {
+        font-size: clamp(2rem, 6vw, 3rem);
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.75rem;
+      }
+
+      #overlay p {
+        opacity: 0.9;
+        line-height: 1.5;
+        margin-bottom: 1.5rem;
+      }
+
+      #overlayActions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: center;
+      }
+
+      #overlay button {
+        pointer-events: auto;
+        border: 0;
+        border-radius: 0.5rem;
+        padding: 0.75rem 1.4rem;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #0b1220;
+        background: #7dd3fc;
+        cursor: pointer;
+      }
+
+      #overlay button:hover {
+        background: #bae6fd;
+      }
+
+      #overlay button.secondary {
+        background: transparent;
+        color: #e8eefc;
+        outline: 1px solid rgba(232, 238, 252, 0.35);
+      }
+
+      #overlay button.secondary:hover {
+        background: rgba(232, 238, 252, 0.08);
+      }
+
+      #overlayExtra .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: center;
+      }
+
+      #overlayExtra .field {
+        display: grid;
+        gap: 0.4rem;
+        text-align: left;
+        margin: 0 auto 1.25rem;
+        max-width: 16rem;
+      }
+
+      #overlayExtra .field span {
+        font-size: 0.85rem;
+        opacity: 0.85;
+      }
+
+      #overlayExtra input {
+        width: 100%;
+        border: 1px solid rgba(232, 238, 252, 0.35);
+        border-radius: 0.5rem;
+        padding: 0.7rem 0.85rem;
+        font-size: 1.1rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        text-align: center;
+        color: #e8eefc;
+        background: rgba(8, 14, 28, 0.85);
+        outline: none;
+      }
+
+      #overlayExtra input:focus {
+        border-color: #7dd3fc;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="renderCanvas" tabindex="0"></canvas>
+    <div id="hud">
+      <div id="crosshair"></div>
+      <div id="status">
+        <h1 id="phaseTitle">Click to start</h1>
+        <p id="phaseDetail">Hide behind cover before the seeker starts hunting.</p>
+      </div>
+      <div id="hint">
+        WASD move · mouse look · Shift sprint<br />
+        Esc releases the mouse
+      </div>
+    </div>
+    <div id="overlay">
+      <div class="panel">
+        <h1 id="overlayTitle">Hide & Seek</h1>
+        <p id="overlayText">Choose how you want to play.</p>
+        <div id="overlayExtra"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
