@@ -134,7 +134,7 @@ export class NetClient {
       socket.addEventListener("error", () => {
         if (!settled) {
           settled = true;
-          reject(new Error("Could not reach the lobby server. Is it running on port 5080?"));
+          reject(new Error("Could not reach the lobby server."));
         }
       });
 

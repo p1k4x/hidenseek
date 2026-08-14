@@ -12,7 +12,25 @@ Requires [Docker](https://docs.docker.com/get-docker/) with Compose.
 docker compose up --build
 ```
 
-Open `http://localhost:8080`. The container serves the game UI and the WebSocket lobby at `/ws` on the same port.
+Open `http://localhost:8082`. The container process listens on **8080 inside the image**; Compose maps that to host **8082** (`HIDENSEEK_PORT` to override). The game UI and WebSocket lobby (`/ws`) share that port.
+
+### Unraid
+
+Copy this repo to `/mnt/user/appdata/hidenseek`, then:
+
+```bash
+cd /mnt/user/appdata/hidenseek
+docker build -t hidenseek .
+docker rm -f hidenseek 2>/dev/null
+docker run -d \
+  --name hidenseek \
+  -p 8082:8080 \
+  --restart unless-stopped \
+  hidenseek
+```
+
+- Direct: `http://192.168.1.168:8082/`
+- Via the home portal: rebuild **portal** with `HIDE_UPSTREAM=http://192.168.1.168:8082`, then `http://192.168.1.168:8080/hide/`
 
 ### Client (local)
 

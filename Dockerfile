@@ -5,6 +5,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html tsconfig.json vite.config.ts ./
 COPY src ./src
+ARG VITE_BASE=./
+ENV VITE_BASE=$VITE_BASE
 RUN npm run build
 
 # Server

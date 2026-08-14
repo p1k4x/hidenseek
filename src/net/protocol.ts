@@ -58,6 +58,7 @@ export function defaultWsUrl(): string {
   }
   const proto =
     typeof location !== "undefined" && location.protocol === "https:" ? "wss" : "ws";
-  const portPart = port && port !== "80" && port !== "443" ? `:${port}` : "";
-  return `${proto}://${host}${portPart}/ws`;
+  const ws = new URL("ws", typeof location !== "undefined" ? location.href : `http://${host}/`);
+  ws.protocol = proto === "wss" ? "wss:" : "ws:";
+  return ws.toString();
 }
