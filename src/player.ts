@@ -10,7 +10,13 @@ import { SCHEMES, anyPressed, type ControlScheme } from "./types";
 
 const MOVE_SPEED = 0.18;
 const SPRINT_MULT = 1.7;
-const EYE_HEIGHT = 1.6;
+const CROUCH_MULT = 0.55;
+const STAND_HALF = 0.85;
+const STAND_EYE = 1.6;
+const CROUCH_HALF = 0.5;
+const CROUCH_EYE = 0.95;
+const STAND_HEIGHT = 1.7;
+const CROUCH_HEIGHT = 1.0;
 const MAX_PITCH = Math.PI / 2 - 0.08;
 const TURN_SPEED = 0.045;
 
@@ -25,18 +31,19 @@ export class Player {
   private scheme: ControlScheme = "primary";
   private cameraEnabled = true;
   private inputEnabled = true;
+  private crouching = false;
 
   constructor(scene: Scene, canvas: HTMLCanvasElement, spawn: Vector3) {
     this.canvas = canvas;
 
     this.body = MeshBuilder.CreateCapsule(
       "playerBody",
-      { height: 1.7, radius: 0.35, tessellation: 8 },
+      { height: STAND_HEIGHT, radius: 0.35, tessellation: 8 },
       scene,
     );
     this.body.isPickable = false;
     this.body.checkCollisions = true;
-    this.body.ellipsoid = new Vector3(0.35, 0.85, 0.35);
+    this.body.ellipsoid = new Vector3(0.35, STAND_HALF, 0.35);
 
     const material = new StandardMaterial("hiderMat", scene);
     material.diffuseColor = new Color3(0.35, 0.65, 0.95);
@@ -84,14 +91,19 @@ export class Player {
 
   setInputEnabled(enabled: boolean): void {
     this.inputEnabled = enabled;
-    if (!enabled) this.keys.clear();
+    if (!enabled) {
+      this.keys.clear();
+      this.applyStance(false);
+      this.body.position.y = STAND_HALF;
+    }
   }
 
   reset(spawn: Vector3): void {
     this.keys.clear();
     this.yaw = 0;
     this.pitch = 0;
-    this.body.position.set(spawn.x, 0.85, spawn.z);
+    this.applyStance(false);
+    this.body.position.set(spawn.x, STAND_HALF, spawn.z);
     this.syncCamera();
   }
 
@@ -112,11 +124,16 @@ export class Player {
     if (anyPressed(this.keys, map.turnLeft)) this.yaw -= TURN_SPEED;
     if (anyPressed(this.keys, map.turnRight)) this.yaw += TURN_SPEED;
 
+    const crouching = anyPressed(this.keys, map.crouch) || Boolean(touch?.crouch);
+    this.applyStance(crouching);
+
     const forward = new Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const right = new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
-    const sprint = anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint);
-    const speed = MOVE_SPEED * (sprint ? SPRINT_MULT : 1);
+    // Crouch wins over sprint.
+    const sprint =
+      !crouching && (anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint));
+    const speed = MOVE_SPEED * (crouching ? CROUCH_MULT : sprint ? SPRINT_MULT : 1);
     const move = Vector3.Zero();
 
     if (anyPressed(this.keys, map.forward)) move.addInPlace(forward);
@@ -132,27 +149,39 @@ export class Player {
     if (move.lengthSquared() > 0.0001) {
       move.normalize().scaleInPlace(speed);
       this.body.moveWithCollisions(move);
-      this.body.position.y = 0.85;
     }
+
+    this.body.position.y = this.crouching ? CROUCH_HALF : STAND_HALF;
 
     if (this.cameraEnabled) this.syncCamera();
   }
 
   get position(): Vector3 {
-    return this.body.position.add(new Vector3(0, EYE_HEIGHT - 0.85, 0));
+    const half = this.crouching ? CROUCH_HALF : STAND_HALF;
+    const eye = this.crouching ? CROUCH_EYE : STAND_EYE;
+    return this.body.position.add(new Vector3(0, eye - half, 0));
   }
 
-  getPose(): { x: number; y: number; z: number; yaw: number } {
+  getPose(): { x: number; y: number; z: number; yaw: number; crouch: boolean } {
     return {
       x: this.body.position.x,
       y: this.body.position.y,
       z: this.body.position.z,
       yaw: this.yaw,
+      crouch: this.crouching,
     };
   }
 
   /** Snap / lerp target for a remotely controlled hider body. */
-  setRemotePose(x: number, y: number, z: number, yaw: number, smooth = true): void {
+  setRemotePose(
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    crouch = false,
+    smooth = true,
+  ): void {
+    this.applyStance(crouch);
     if (smooth) {
       this.body.position.x += (x - this.body.position.x) * 0.35;
       this.body.position.y = y;
@@ -165,8 +194,18 @@ export class Player {
     this.body.rotation.y = this.yaw;
   }
 
+  private applyStance(crouching: boolean): void {
+    if (this.crouching === crouching) return;
+    this.crouching = crouching;
+    const half = crouching ? CROUCH_HALF : STAND_HALF;
+    const scaleY = crouching ? CROUCH_HEIGHT / STAND_HEIGHT : 1;
+    this.body.scaling.y = scaleY;
+    this.body.ellipsoid = new Vector3(0.35, half, 0.35);
+  }
+
   private syncCamera(): void {
-    this.camera.position.set(this.body.position.x, EYE_HEIGHT, this.body.position.z);
+    const eye = this.crouching ? CROUCH_EYE : STAND_EYE;
+    this.camera.position.set(this.body.position.x, eye, this.body.position.z);
     const look = new Vector3(
       Math.sin(this.yaw) * Math.cos(this.pitch),
       Math.sin(this.pitch),

@@ -165,19 +165,19 @@ export function setHintForSetup(mode: GameMode, role: Role): void {
     hint.classList.add("touchHint");
     const who = mode === "online" ? (role === "hider" ? "Hider" : "Seeker") : null;
     const prefix = who ? `${who}: ` : "";
-    hint.innerHTML = `${prefix}Left stick move · drag right to look<br />Hold Sprint · no mouse needed`;
+    hint.innerHTML = `${prefix}Left stick move · drag right to look<br />Hold Sprint / Crouch · no mouse needed`;
     return;
   }
 
   hint.classList.remove("touchHint");
 
   if (mode === "solo") {
-    hint.innerHTML = "WASD move · mouse look · Shift sprint<br />Esc releases the mouse";
+    hint.innerHTML = "WASD move · mouse look · Shift sprint · hold C crouch<br />Esc releases the mouse";
     return;
   }
 
   const who = role === "hider" ? "Hider" : "Seeker";
-  hint.innerHTML = `${who}: WASD + mouse · Shift sprint<br />Esc releases the mouse · Online sync on`;
+  hint.innerHTML = `${who}: WASD + mouse · Shift sprint · hold C crouch<br />Esc releases the mouse · Online sync on`;
 }
 
 function setOverlay(

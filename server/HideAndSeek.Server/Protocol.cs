@@ -39,6 +39,9 @@ public sealed class ClientMessage
 
     [JsonPropertyName("yaw")]
     public double? Yaw { get; set; }
+
+    [JsonPropertyName("crouch")]
+    public bool? Crouch { get; set; }
 }
 
 public static class ServerMessages
@@ -72,7 +75,7 @@ public static class ServerMessages
         endsAt,
     };
 
-    public static object Pose(string role, double x, double y, double z, double yaw) => new
+    public static object Pose(string role, double x, double y, double z, double yaw, bool crouch) => new
     {
         type = "pose",
         role,
@@ -80,6 +83,7 @@ public static class ServerMessages
         y,
         z,
         yaw,
+        crouch,
     };
 
     public static object Spotted(bool active) => new

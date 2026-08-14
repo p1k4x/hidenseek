@@ -14,6 +14,7 @@ const WALK_SPEED = 0.09;
 const CHASE_SPEED = 0.14;
 const HUMAN_SPEED = 0.18;
 const HUMAN_SPRINT = 1.7;
+const CROUCH_MULT = 0.55;
 const TURN_LERP = 0.12;
 const HUMAN_TURN = 0.045;
 const SIGHT_RANGE = 22;
@@ -21,7 +22,12 @@ const CATCH_RANGE = 1.6;
 const LOOK_AHEAD = 1.8;
 const STUCK_FRAMES = 25;
 const STUCK_EPSILON = 0.02;
-const EYE_HEIGHT = 1.6;
+const STAND_HALF = 0.9;
+const STAND_EYE = 1.6;
+const CROUCH_HALF = 0.525;
+const CROUCH_EYE = 0.95;
+const STAND_HEIGHT = 1.8;
+const CROUCH_HEIGHT = 1.05;
 const MAX_PITCH = Math.PI / 2 - 0.08;
 
 const WAYPOINTS = [
@@ -44,6 +50,7 @@ export class Seeker {
   private scheme: ControlScheme = "secondary";
   private cameraEnabled = false;
   private inputEnabled = false;
+  private crouching = false;
   private readonly obstacles: AbstractMesh[];
   private readonly scene: Scene;
   private readonly canvas: HTMLCanvasElement;
@@ -61,11 +68,11 @@ export class Seeker {
     this.obstacles = obstacles;
     this.mesh = MeshBuilder.CreateCapsule(
       "seeker",
-      { height: 1.8, radius: 0.35, tessellation: 12 },
+      { height: STAND_HEIGHT, radius: 0.35, tessellation: 12 },
       scene,
     );
     this.mesh.position = spawn.clone();
-    this.mesh.ellipsoid = new Vector3(0.35, 0.9, 0.35);
+    this.mesh.ellipsoid = new Vector3(0.35, STAND_HALF, 0.35);
     this.mesh.checkCollisions = true;
     this.mesh.isPickable = false;
 
@@ -113,7 +120,8 @@ export class Seeker {
   }
 
   reset(spawn: Vector3): void {
-    this.mesh.position.set(spawn.x, 0.9, spawn.z);
+    this.applyStance(false);
+    this.mesh.position.set(spawn.x, STAND_HALF, spawn.z);
     this.waypointIndex = 0;
     this.hunting = false;
     this.stuckFrames = 0;
@@ -127,20 +135,35 @@ export class Seeker {
   setActive(active: boolean): void {
     this.hunting = active;
     this.inputEnabled = this.human && active;
-    if (!active) this.keys.clear();
+    if (!active) {
+      this.keys.clear();
+      if (this.human) {
+        this.applyStance(false);
+        this.mesh.position.y = STAND_HALF;
+      }
+    }
   }
 
-  getPose(): { x: number; y: number; z: number; yaw: number } {
+  getPose(): { x: number; y: number; z: number; yaw: number; crouch: boolean } {
     return {
       x: this.mesh.position.x,
       y: this.mesh.position.y,
       z: this.mesh.position.z,
       yaw: this.yaw,
+      crouch: this.crouching,
     };
   }
 
   /** Snap / lerp target for a remotely controlled seeker body. */
-  setRemotePose(x: number, y: number, z: number, yaw: number, smooth = true): void {
+  setRemotePose(
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    crouch = false,
+    smooth = true,
+  ): void {
+    this.applyStance(crouch);
     if (smooth) {
       this.mesh.position.x += (x - this.mesh.position.x) * 0.35;
       this.mesh.position.y = y;
@@ -185,10 +208,14 @@ export class Seeker {
       if (anyPressed(this.keys, map.turnLeft)) this.yaw -= HUMAN_TURN;
       if (anyPressed(this.keys, map.turnRight)) this.yaw += HUMAN_TURN;
 
+      const crouching = anyPressed(this.keys, map.crouch) || Boolean(touch?.crouch);
+      this.applyStance(crouching);
+
       const forward = new Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
       const right = new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-      const sprint = anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint);
-      const speed = HUMAN_SPEED * (sprint ? HUMAN_SPRINT : 1);
+      const sprint =
+        !crouching && (anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint));
+      const speed = HUMAN_SPEED * (crouching ? CROUCH_MULT : sprint ? HUMAN_SPRINT : 1);
       const move = Vector3.Zero();
 
       if (anyPressed(this.keys, map.forward)) move.addInPlace(forward);
@@ -204,9 +231,9 @@ export class Seeker {
       if (move.lengthSquared() > 0.0001) {
         move.normalize().scaleInPlace(speed);
         this.mesh.moveWithCollisions(move);
-        this.mesh.position.y = 0.9;
       }
 
+      this.mesh.position.y = this.crouching ? CROUCH_HALF : STAND_HALF;
       this.mesh.rotation.y = this.yaw;
     }
 
@@ -236,7 +263,7 @@ export class Seeker {
       const speed = spotted ? CHASE_SPEED : WALK_SPEED;
       const before = this.mesh.position.clone();
       this.mesh.moveWithCollisions(steered.scale(speed));
-      this.mesh.position.y = 0.9;
+      this.mesh.position.y = STAND_HALF;
 
       const moved = Vector3.Distance(before, this.mesh.position);
       if (moved < STUCK_EPSILON) {
@@ -262,9 +289,22 @@ export class Seeker {
     return { spotted, caught };
   }
 
+  private applyStance(crouching: boolean): void {
+    if (this.crouching === crouching) return;
+    this.crouching = crouching;
+    const half = crouching ? CROUCH_HALF : STAND_HALF;
+    const scaleY = crouching ? CROUCH_HEIGHT / STAND_HEIGHT : 1;
+    this.mesh.scaling.y = scaleY;
+    this.mesh.ellipsoid = new Vector3(0.35, half, 0.35);
+  }
+
+  private eyeHeight(): number {
+    return this.crouching ? CROUCH_EYE : STAND_EYE;
+  }
+
   private syncCamera(): void {
     if (!this.cameraEnabled) return;
-    this.camera.position.set(this.mesh.position.x, EYE_HEIGHT, this.mesh.position.z);
+    this.camera.position.set(this.mesh.position.x, this.eyeHeight(), this.mesh.position.z);
     const look = new Vector3(
       Math.sin(this.yaw) * Math.cos(this.pitch),
       Math.sin(this.pitch),
@@ -303,7 +343,7 @@ export class Seeker {
       nudge,
     );
     this.mesh.moveWithCollisions(away.scale(0.6));
-    this.mesh.position.y = 0.9;
+    this.mesh.position.y = STAND_HALF;
     this.mesh.position.x = Math.max(-17, Math.min(17, this.mesh.position.x));
     this.mesh.position.z = Math.max(-17, Math.min(17, this.mesh.position.z));
   }
@@ -326,7 +366,8 @@ export class Seeker {
   }
 
   private canSee(hiderPos: Vector3): boolean {
-    const origin = this.mesh.position.add(new Vector3(0, 0.5, 0));
+    const half = this.crouching ? CROUCH_HALF : STAND_HALF;
+    const origin = this.mesh.position.add(new Vector3(0, this.eyeHeight() - half, 0));
     const toHider = hiderPos.subtract(origin);
     const distance = toHider.length();
     if (distance > SIGHT_RANGE || distance < 0.2) return false;

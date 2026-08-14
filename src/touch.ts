@@ -9,6 +9,7 @@ export type TouchSample = {
   lookYaw: number;
   lookPitch: number;
   sprint: boolean;
+  crouch: boolean;
 };
 
 /** True when the device is likely phone/tablet (coarse pointer or touch). */
@@ -21,7 +22,7 @@ export function prefersTouchControls(): boolean {
 }
 
 /**
- * On-screen move stick (left), look drag (right), and sprint hold.
+ * On-screen move stick (left), look drag (right), sprint + crouch hold.
  * Keyboard/mouse still work when this is hidden.
  */
 export class TouchControls {
@@ -30,10 +31,12 @@ export class TouchControls {
   private readonly stickKnob: HTMLElement;
   private readonly lookPad: HTMLElement;
   private readonly sprintBtn: HTMLElement;
+  private readonly crouchBtn: HTMLElement;
 
   private movePointerId: number | null = null;
   private lookPointerId: number | null = null;
   private sprintPointerId: number | null = null;
+  private crouchPointerId: number | null = null;
   private stickOriginX = 0;
   private stickOriginY = 0;
   private moveX = 0;
@@ -43,6 +46,7 @@ export class TouchControls {
   private lastLookX = 0;
   private lastLookY = 0;
   private sprint = false;
+  private crouch = false;
   private visible = false;
 
   constructor() {
@@ -56,6 +60,7 @@ export class TouchControls {
       </div>
       <div id="touchLook" class="touch-look" aria-hidden="true"></div>
       <button type="button" id="touchSprint" class="touch-sprint">Sprint</button>
+      <button type="button" id="touchCrouch" class="touch-crouch">Crouch</button>
     `;
     document.body.appendChild(this.root);
 
@@ -63,10 +68,12 @@ export class TouchControls {
     this.stickKnob = this.root.querySelector(".touch-stick-knob") as HTMLElement;
     this.lookPad = this.root.querySelector("#touchLook") as HTMLElement;
     this.sprintBtn = this.root.querySelector("#touchSprint") as HTMLElement;
+    this.crouchBtn = this.root.querySelector("#touchCrouch") as HTMLElement;
 
     this.bindStick();
     this.bindLook();
     this.bindSprint();
+    this.bindCrouch();
   }
 
   get available(): boolean {
@@ -98,6 +105,7 @@ export class TouchControls {
       lookYaw,
       lookPitch,
       sprint: this.sprint,
+      crouch: this.crouch,
     };
   }
 
@@ -200,6 +208,27 @@ export class TouchControls {
     this.sprintBtn.addEventListener("pointercancel", up);
   }
 
+  private bindCrouch(): void {
+    const down = (event: PointerEvent) => {
+      if (this.crouchPointerId !== null) return;
+      event.preventDefault();
+      this.crouchPointerId = event.pointerId;
+      this.crouch = true;
+      this.crouchBtn.classList.add("active");
+      this.crouchBtn.setPointerCapture(event.pointerId);
+    };
+    const up = (event: PointerEvent) => {
+      if (event.pointerId !== this.crouchPointerId) return;
+      this.releaseCapture(this.crouchBtn, event.pointerId);
+      this.crouchPointerId = null;
+      this.crouch = false;
+      this.crouchBtn.classList.remove("active");
+    };
+    this.crouchBtn.addEventListener("pointerdown", down);
+    this.crouchBtn.addEventListener("pointerup", up);
+    this.crouchBtn.addEventListener("pointercancel", up);
+  }
+
   private releaseCapture(el: HTMLElement, pointerId: number): void {
     if (el.hasPointerCapture(pointerId)) {
       el.releasePointerCapture(pointerId);
@@ -216,15 +245,21 @@ export class TouchControls {
     if (this.sprintPointerId !== null) {
       this.releaseCapture(this.sprintBtn, this.sprintPointerId);
     }
+    if (this.crouchPointerId !== null) {
+      this.releaseCapture(this.crouchBtn, this.crouchPointerId);
+    }
     this.movePointerId = null;
     this.lookPointerId = null;
     this.sprintPointerId = null;
+    this.crouchPointerId = null;
     this.moveX = 0;
     this.moveZ = 0;
     this.lookDX = 0;
     this.lookDY = 0;
     this.sprint = false;
+    this.crouch = false;
     this.stickKnob.style.transform = "translate(-50%, -50%)";
     this.sprintBtn.classList.remove("active");
+    this.crouchBtn.classList.remove("active");
   }
 }

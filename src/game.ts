@@ -479,7 +479,7 @@ export class Game {
     if (now - this.lastPoseSentAt >= POSE_INTERVAL_MS) {
       this.lastPoseSentAt = now;
       const pose = this.role === "hider" ? this.player.getPose() : this.seeker.getPose();
-      this.net.sendPose(pose.x, pose.y, pose.z, pose.yaw);
+      this.net.sendPose(pose.x, pose.y, pose.z, pose.yaw, pose.crouch);
     }
 
     const secondsLeft = Math.max(0, Math.ceil((this.phaseEndsAt - now) / 1000));
@@ -493,10 +493,11 @@ export class Game {
   private applyRemotePose(pose: PosePayload, smooth: boolean): void {
     // Neither avatar is revealed during the hide phase.
     if (this.phase === "hiding") return;
+    const crouch = Boolean(pose.crouch);
     if (pose.role === "hider") {
-      this.player.setRemotePose(pose.x, pose.y, pose.z, pose.yaw, smooth);
+      this.player.setRemotePose(pose.x, pose.y, pose.z, pose.yaw, crouch, smooth);
     } else {
-      this.seeker.setRemotePose(pose.x, pose.y, pose.z, pose.yaw, smooth);
+      this.seeker.setRemotePose(pose.x, pose.y, pose.z, pose.yaw, crouch, smooth);
     }
   }
 

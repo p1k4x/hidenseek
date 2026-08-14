@@ -92,8 +92,8 @@ export class NetClient {
     this.send({ type: "start" });
   }
 
-  sendPose(x: number, y: number, z: number, yaw: number): void {
-    this.send({ type: "pose", x, y, z, yaw });
+  sendPose(x: number, y: number, z: number, yaw: number, crouch = false): void {
+    this.send({ type: "pose", x, y, z, yaw, crouch });
   }
 
   /** Kick a reconnect attempt if we dropped during lobby/match (e.g. phone woke). */

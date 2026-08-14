@@ -309,7 +309,7 @@ public sealed class RoomManager
             if (peerPose is { } pose && phase == MatchPhase.Seeking)
             {
                 var peerRole = role == Roles.Hider ? Roles.Seeker : Roles.Hider;
-                await SendAsync(socket, ServerMessages.Pose(peerRole, pose.X, pose.Y, pose.Z, pose.Yaw), ct);
+                await SendAsync(socket, ServerMessages.Pose(peerRole, pose.X, pose.Y, pose.Z, pose.Yaw, pose.Crouch), ct);
             }
         }
 
@@ -393,7 +393,12 @@ public sealed class RoomManager
             return;
         }
 
-        var pose = Pose.From(message.X.Value, message.Y.Value, message.Z.Value, message.Yaw.Value);
+        var pose = Pose.From(
+            message.X.Value,
+            message.Y.Value,
+            message.Z.Value,
+            message.Yaw.Value,
+            message.Crouch ?? false);
         string? role = null;
         WebSocket? peer = null;
         var shouldRelay = false;
@@ -442,7 +447,7 @@ public sealed class RoomManager
         {
             await SendAsync(
                 peer,
-                ServerMessages.Pose(role, pose.X, pose.Y, pose.Z, pose.Yaw),
+                ServerMessages.Pose(role, pose.X, pose.Y, pose.Z, pose.Yaw, pose.Crouch),
                 ct);
         }
 

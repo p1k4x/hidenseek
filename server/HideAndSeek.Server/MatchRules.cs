@@ -13,6 +13,8 @@ public static class MatchRules
     public const double MinSightDot = 0.35;
     public const double SeekerEyeY = 1.4;
     public const double HiderEyeY = 1.6;
+    public const double SeekerCrouchEyeY = 0.85;
+    public const double HiderCrouchEyeY = 0.95;
 
     private static readonly Aabb[] Obstacles = BuildObstacles();
 
@@ -38,7 +40,9 @@ public static class MatchRules
             return false;
         }
 
-        if (!HasLineOfSight(seeker.X, seeker.Z, hider.X, hider.Z))
+        var seekerEye = seeker.Crouch ? SeekerCrouchEyeY : SeekerEyeY;
+        var hiderEye = hider.Crouch ? HiderCrouchEyeY : HiderEyeY;
+        if (!HasLineOfSight(seeker.X, seeker.Z, seekerEye, hider.X, hider.Z, hiderEye))
         {
             return false;
         }
@@ -47,10 +51,12 @@ public static class MatchRules
         return dist < CatchRange;
     }
 
-    private static bool HasLineOfSight(double sx, double sz, double hx, double hz)
+    private static bool HasLineOfSight(
+        double sx, double sz, double sy,
+        double hx, double hz, double hy)
     {
-        var origin = new Vec3(sx, SeekerEyeY, sz);
-        var target = new Vec3(hx, HiderEyeY, hz);
+        var origin = new Vec3(sx, sy, sz);
+        var target = new Vec3(hx, hy, hz);
         var dx = target.X - origin.X;
         var dy = target.Y - origin.Y;
         var dz = target.Z - origin.Z;
@@ -148,12 +154,12 @@ public static class MatchRules
         double MaxX, double MaxY, double MaxZ);
 }
 
-public readonly record struct Pose(double X, double Y, double Z, double Yaw)
+public readonly record struct Pose(double X, double Y, double Z, double Yaw, bool Crouch = false)
 {
     public bool IsSet { get; init; }
 
     public static Pose Empty => default;
 
-    public static Pose From(double x, double y, double z, double yaw) =>
-        new(x, y, z, yaw) { IsSet = true };
+    public static Pose From(double x, double y, double z, double yaw, bool crouch = false) =>
+        new(x, y, z, yaw, crouch) { IsSet = true };
 }

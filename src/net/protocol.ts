@@ -6,7 +6,7 @@ export type ClientMessage =
   | { type: "reconnect"; sessionId: string }
   | { type: "start" }
   | { type: "leave" }
-  | { type: "pose"; x: number; y: number; z: number; yaw: number };
+  | { type: "pose"; x: number; y: number; z: number; yaw: number; crouch?: boolean };
 
 export type PosePayload = {
   type: "pose";
@@ -15,6 +15,7 @@ export type PosePayload = {
   y: number;
   z: number;
   yaw: number;
+  crouch?: boolean;
 };
 
 export type RoomState = {

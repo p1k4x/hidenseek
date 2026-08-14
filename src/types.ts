@@ -10,6 +10,7 @@ export interface SchemeKeys {
   left: string[];
   right: string[];
   sprint: string[];
+  crouch: string[];
   turnLeft?: string[];
   turnRight?: string[];
 }
@@ -21,6 +22,8 @@ export const SCHEMES: Record<ControlScheme, SchemeKeys> = {
     left: ["KeyA"],
     right: ["KeyD"],
     sprint: ["ShiftLeft", "ShiftRight"],
+    // Ctrl only on primary — secondary uses Ctrl for sprint.
+    crouch: ["KeyC", "ControlLeft", "ControlRight"],
   },
   secondary: {
     forward: ["ArrowUp"],
@@ -28,6 +31,7 @@ export const SCHEMES: Record<ControlScheme, SchemeKeys> = {
     left: ["ArrowLeft"],
     right: ["ArrowRight"],
     sprint: ["ControlRight", "ControlLeft"],
+    crouch: ["KeyC"],
     turnLeft: ["Comma"],
     turnRight: ["Period"],
   },
