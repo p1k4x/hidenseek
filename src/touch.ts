@@ -22,7 +22,8 @@ export function prefersTouchControls(): boolean {
 }
 
 /**
- * On-screen move stick (left), look drag (right), sprint + crouch hold.
+ * On-screen move stick (left), look drag (right), hold sprint, tap-toggle crouch.
+ * Crouch sits with the stick so landscape play can duck and steer together.
  * Keyboard/mouse still work when this is hidden.
  */
 export class TouchControls {
@@ -45,6 +46,7 @@ export class TouchControls {
   private lookDY = 0;
   private lastLookX = 0;
   private lastLookY = 0;
+  private stickRadius = STICK_RADIUS;
   private sprint = false;
   private crouch = false;
   private visible = false;
@@ -54,13 +56,15 @@ export class TouchControls {
     this.root.id = "touchControls";
     this.root.className = "hidden";
     this.root.innerHTML = `
-      <div id="touchStick" class="touch-stick" aria-hidden="true">
-        <div class="touch-stick-ring"></div>
-        <div class="touch-stick-knob"></div>
+      <div class="touch-left">
+        <div id="touchStick" class="touch-stick" aria-hidden="true">
+          <div class="touch-stick-ring"></div>
+          <div class="touch-stick-knob"></div>
+        </div>
+        <button type="button" id="touchCrouch" class="touch-crouch" aria-pressed="false">Crouch</button>
       </div>
       <div id="touchLook" class="touch-look" aria-hidden="true"></div>
       <button type="button" id="touchSprint" class="touch-sprint">Sprint</button>
-      <button type="button" id="touchCrouch" class="touch-crouch">Crouch</button>
     `;
     document.body.appendChild(this.root);
 
@@ -118,6 +122,7 @@ export class TouchControls {
       const rect = this.stickPad.getBoundingClientRect();
       this.stickOriginX = rect.left + rect.width / 2;
       this.stickOriginY = rect.top + rect.height / 2;
+      this.stickRadius = Math.max(32, Math.min(rect.width, rect.height) / 2 - 4);
       this.applyStick(event.clientX, event.clientY);
     };
 
@@ -146,13 +151,13 @@ export class TouchControls {
     let dx = clientX - this.stickOriginX;
     let dy = clientY - this.stickOriginY;
     const len = Math.hypot(dx, dy);
-    if (len > STICK_RADIUS) {
-      dx = (dx / len) * STICK_RADIUS;
-      dy = (dy / len) * STICK_RADIUS;
+    if (len > this.stickRadius) {
+      dx = (dx / len) * this.stickRadius;
+      dy = (dy / len) * this.stickRadius;
     }
     this.stickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-    this.moveX = dx / STICK_RADIUS;
-    this.moveZ = -dy / STICK_RADIUS;
+    this.moveX = dx / this.stickRadius;
+    this.moveZ = -dy / this.stickRadius;
   }
 
   private bindLook(): void {
@@ -213,20 +218,24 @@ export class TouchControls {
       if (this.crouchPointerId !== null) return;
       event.preventDefault();
       this.crouchPointerId = event.pointerId;
-      this.crouch = true;
-      this.crouchBtn.classList.add("active");
+      this.crouch = !this.crouch;
+      this.syncCrouchButton();
       this.crouchBtn.setPointerCapture(event.pointerId);
     };
     const up = (event: PointerEvent) => {
       if (event.pointerId !== this.crouchPointerId) return;
       this.releaseCapture(this.crouchBtn, event.pointerId);
       this.crouchPointerId = null;
-      this.crouch = false;
-      this.crouchBtn.classList.remove("active");
     };
     this.crouchBtn.addEventListener("pointerdown", down);
     this.crouchBtn.addEventListener("pointerup", up);
     this.crouchBtn.addEventListener("pointercancel", up);
+  }
+
+  private syncCrouchButton(): void {
+    this.crouchBtn.classList.toggle("active", this.crouch);
+    this.crouchBtn.setAttribute("aria-pressed", this.crouch ? "true" : "false");
+    this.crouchBtn.textContent = this.crouch ? "Crouched" : "Crouch";
   }
 
   private releaseCapture(el: HTMLElement, pointerId: number): void {
@@ -260,6 +269,6 @@ export class TouchControls {
     this.crouch = false;
     this.stickKnob.style.transform = "translate(-50%, -50%)";
     this.sprintBtn.classList.remove("active");
-    this.crouchBtn.classList.remove("active");
+    this.syncCrouchButton();
   }
 }

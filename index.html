@@ -72,7 +72,7 @@
 
       #status {
         position: absolute;
-        top: 1.25rem;
+        top: max(1.25rem, env(safe-area-inset-top));
         left: 50%;
         transform: translateX(-50%);
         text-align: center;
@@ -103,7 +103,7 @@
       #hint.touchHint {
         left: 50%;
         bottom: auto;
-        top: 4.75rem;
+        top: max(4.75rem, calc(env(safe-area-inset-top) + 3.5rem));
         transform: translateX(-50%);
         text-align: center;
         max-width: min(22rem, 92vw);
@@ -131,6 +131,8 @@
         text-align: center;
         padding: 2rem;
         max-width: 32rem;
+        max-height: 100dvh;
+        overflow: auto;
       }
 
       #overlay h1 {
@@ -228,13 +230,26 @@
         display: none;
       }
 
-      .touch-stick {
+      .touch-left {
         position: absolute;
-        left: max(1.25rem, env(safe-area-inset-left));
-        bottom: max(1.5rem, env(safe-area-inset-bottom));
+        left: max(0.85rem, env(safe-area-inset-left));
+        bottom: max(0.85rem, env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column-reverse;
+        align-items: flex-start;
+        gap: 0.7rem;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .touch-left > * {
+        pointer-events: auto;
+      }
+
+      .touch-stick {
+        position: relative;
         width: 7.5rem;
         height: 7.5rem;
-        pointer-events: auto;
         touch-action: none;
       }
 
@@ -263,34 +278,41 @@
         position: absolute;
         top: 0;
         right: 0;
-        width: 55%;
+        width: 52%;
         height: 100%;
         pointer-events: auto;
         touch-action: none;
+        z-index: 1;
       }
 
       .touch-sprint,
       .touch-crouch {
-        position: absolute;
-        right: max(1.25rem, env(safe-area-inset-right));
         pointer-events: auto;
         touch-action: none;
         border: 2px solid rgba(232, 238, 252, 0.4);
         border-radius: 999px;
-        padding: 0.85rem 1.25rem;
+        min-width: 4.6rem;
+        min-height: 3.15rem;
+        padding: 0.85rem 1.2rem;
         font-size: 0.95rem;
         font-weight: 650;
         color: #e8eefc;
         background: rgba(8, 14, 28, 0.45);
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .touch-sprint:focus,
+      .touch-crouch:focus {
+        outline: none;
       }
 
       .touch-sprint {
-        bottom: max(1.5rem, env(safe-area-inset-bottom));
-      }
-
-      .touch-crouch {
-        bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) + 3.4rem);
+        position: absolute;
+        right: max(0.85rem, env(safe-area-inset-right));
+        bottom: max(0.85rem, env(safe-area-inset-bottom));
+        z-index: 2;
       }
 
       .touch-sprint.active,
@@ -298,6 +320,70 @@
         background: rgba(125, 211, 252, 0.55);
         color: #0b1220;
         text-shadow: none;
+      }
+
+      @media (orientation: landscape) {
+        .touch-left {
+          flex-direction: row;
+          align-items: flex-end;
+          gap: 0.85rem;
+        }
+
+        .touch-look {
+          width: 48%;
+          top: 0;
+          bottom: 4.6rem;
+          height: auto;
+        }
+
+        .touch-sprint,
+        .touch-crouch {
+          min-height: 2.9rem;
+        }
+      }
+
+      @media (orientation: landscape) and (max-height: 500px) {
+        #status {
+          top: max(0.4rem, env(safe-area-inset-top));
+        }
+
+        #status h1 {
+          font-size: 1.05rem;
+        }
+
+        #status p {
+          font-size: 0.8rem;
+          margin-top: 0.12rem;
+        }
+
+        #hint.touchHint {
+          top: max(2.5rem, calc(env(safe-area-inset-top) + 1.9rem));
+          font-size: 0.72rem;
+          max-width: min(28rem, 72vw);
+        }
+
+        #overlay .panel {
+          padding: 1rem 1.5rem;
+        }
+
+        #overlay h1 {
+          font-size: clamp(1.35rem, 5.5vh, 2.1rem);
+          margin-bottom: 0.35rem;
+        }
+
+        #overlay p {
+          margin-bottom: 0.85rem;
+          font-size: 0.9rem;
+        }
+
+        #overlay button {
+          padding: 0.6rem 1.15rem;
+        }
+
+        .touch-stick {
+          width: 6.75rem;
+          height: 6.75rem;
+        }
       }
     </style>
   </head>

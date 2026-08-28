@@ -165,7 +165,7 @@ export function setHintForSetup(mode: GameMode, role: Role): void {
     hint.classList.add("touchHint");
     const who = mode === "online" ? (role === "hider" ? "Hider" : "Seeker") : null;
     const prefix = who ? `${who}: ` : "";
-    hint.innerHTML = `${prefix}Left stick move · drag right to look<br />Hold Sprint / Crouch · no mouse needed`;
+    hint.innerHTML = `${prefix}Left stick move · drag right to look<br />Hold Sprint · tap Crouch · no mouse needed`;
     return;
   }
 

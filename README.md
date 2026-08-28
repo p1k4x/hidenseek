@@ -53,7 +53,7 @@ Listens on `http://0.0.0.0:5080` (WebSocket path `/ws`). Use this together with 
 
 Then in the game: **Online** → create a room (pick Hider or Seeker) → share the code → guest joins → host taps **Start**. Both clients share the hide timer, see each other (~15 Hz poses), and catch / escape is decided on the server.
 
-On phones: left stick to move, drag the right side to look, hold **Sprint** / **Crouch**. No pointer lock required. Keyboard: WASD, Shift sprint, hold C to crouch. If a phone sleeps and the WebSocket drops, Online seats stay reserved for ~45s — the other player sees “reconnecting…”, then the match resumes when the phone wakes.
+On phones: left stick to move, drag the right side to look, hold **Sprint**, tap **Crouch** (stays crouched until you tap again). In landscape, Crouch sits next to the stick so you can duck and steer with the same thumb. No pointer lock required. Keyboard: WASD, Shift sprint, hold C to crouch. If a phone sleeps and the WebSocket drops, Online seats stay reserved for ~45s — the other player sees “reconnecting…”, then the match resumes when the phone wakes.
 
 ### Modes
 
