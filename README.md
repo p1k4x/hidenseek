@@ -16,10 +16,12 @@ Open `http://localhost:8082`. The container process listens on **8080 inside the
 
 ### Unraid
 
-Copy this repo to `/mnt/user/appdata/hidenseek`, then:
+Copy this repo to `/mnt/user/appdata/hidenseek` (or `git clone https://github.com/p1k4x/hidenseek.git .` once). To refresh from GitHub and rebuild:
 
 ```bash
 cd /mnt/user/appdata/hidenseek
+git fetch origin
+git pull
 docker build -t hidenseek .
 docker rm -f hidenseek 2>/dev/null
 docker run -d \
