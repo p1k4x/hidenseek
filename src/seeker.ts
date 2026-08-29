@@ -7,6 +7,7 @@ import { Ray } from "@babylonjs/core/Culling/ray";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
+import { canStandAt, CROUCH_COLLISION_MASK } from "./arena";
 import { SCHEMES, anyPressed, type ControlScheme } from "./types";
 import type { TouchSample } from "./touch";
 
@@ -208,14 +209,14 @@ export class Seeker {
       if (anyPressed(this.keys, map.turnLeft)) this.yaw -= HUMAN_TURN;
       if (anyPressed(this.keys, map.turnRight)) this.yaw += HUMAN_TURN;
 
-      const crouching = anyPressed(this.keys, map.crouch) || Boolean(touch?.crouch);
-      this.applyStance(crouching);
+      const wantCrouch = anyPressed(this.keys, map.crouch) || Boolean(touch?.crouch);
+      this.applyStance(this.stanceFromInput(wantCrouch));
 
       const forward = new Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
       const right = new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
       const sprint =
-        !crouching && (anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint));
-      const speed = HUMAN_SPEED * (crouching ? CROUCH_MULT : sprint ? HUMAN_SPRINT : 1);
+        !this.crouching && (anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint));
+      const speed = HUMAN_SPEED * (this.crouching ? CROUCH_MULT : sprint ? HUMAN_SPRINT : 1);
       const move = Vector3.Zero();
 
       if (anyPressed(this.keys, map.forward)) move.addInPlace(forward);
@@ -289,6 +290,18 @@ export class Seeker {
     return { spotted, caught };
   }
 
+  private stanceFromInput(wantCrouch: boolean): boolean {
+    if (wantCrouch) return true;
+    if (!this.crouching) return false;
+    return !canStandAt(
+      this.scene,
+      this.mesh.position.x,
+      this.mesh.position.z,
+      STAND_HEIGHT,
+      [this.mesh],
+    );
+  }
+
   private applyStance(crouching: boolean): void {
     if (this.crouching === crouching) return;
     this.crouching = crouching;
@@ -296,6 +309,7 @@ export class Seeker {
     const scaleY = crouching ? CROUCH_HEIGHT / STAND_HEIGHT : 1;
     this.mesh.scaling.y = scaleY;
     this.mesh.ellipsoid = new Vector3(0.35, half, 0.35);
+    this.mesh.collisionMask = crouching ? CROUCH_COLLISION_MASK : -1;
   }
 
   private eyeHeight(): number {
@@ -349,14 +363,18 @@ export class Seeker {
   }
 
   private isBlocked(direction: Vector3, distance: number): boolean {
-    const origin = this.mesh.position.add(new Vector3(0, 0.4, 0));
-    const ray = new Ray(origin, direction, distance);
-    const hit = this.scene.pickWithRay(
-      ray,
-      (mesh) => this.obstacles.includes(mesh),
-      true,
-    );
-    return Boolean(hit?.hit && (hit.distance ?? 0) < distance);
+    // World-space heights: shin and through tabletops so AI walks around crawl gaps.
+    for (const worldY of [0.4, 1.45]) {
+      const origin = new Vector3(this.mesh.position.x, worldY, this.mesh.position.z);
+      const ray = new Ray(origin, direction, distance);
+      const hit = this.scene.pickWithRay(
+        ray,
+        (mesh) => this.obstacles.includes(mesh),
+        true,
+      );
+      if (hit?.hit && (hit.distance ?? 0) < distance) return true;
+    }
+    return false;
   }
 
   private rotateY(dir: Vector3, angle: number): Vector3 {

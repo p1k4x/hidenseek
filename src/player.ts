@@ -6,6 +6,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { TouchSample } from "./touch";
+import { canStandAt, CROUCH_COLLISION_MASK } from "./arena";
 import { SCHEMES, anyPressed, type ControlScheme } from "./types";
 
 const MOVE_SPEED = 0.18;
@@ -124,16 +125,16 @@ export class Player {
     if (anyPressed(this.keys, map.turnLeft)) this.yaw -= TURN_SPEED;
     if (anyPressed(this.keys, map.turnRight)) this.yaw += TURN_SPEED;
 
-    const crouching = anyPressed(this.keys, map.crouch) || Boolean(touch?.crouch);
-    this.applyStance(crouching);
+    const wantCrouch = anyPressed(this.keys, map.crouch) || Boolean(touch?.crouch);
+    this.applyStance(this.stanceFromInput(wantCrouch));
 
     const forward = new Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
     const right = new Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
 
     // Crouch wins over sprint.
     const sprint =
-      !crouching && (anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint));
-    const speed = MOVE_SPEED * (crouching ? CROUCH_MULT : sprint ? SPRINT_MULT : 1);
+      !this.crouching && (anyPressed(this.keys, map.sprint) || Boolean(touch?.sprint));
+    const speed = MOVE_SPEED * (this.crouching ? CROUCH_MULT : sprint ? SPRINT_MULT : 1);
     const move = Vector3.Zero();
 
     if (anyPressed(this.keys, map.forward)) move.addInPlace(forward);
@@ -194,6 +195,18 @@ export class Player {
     this.body.rotation.y = this.yaw;
   }
 
+  private stanceFromInput(wantCrouch: boolean): boolean {
+    if (wantCrouch) return true;
+    if (!this.crouching) return false;
+    return !canStandAt(
+      this.body.getScene(),
+      this.body.position.x,
+      this.body.position.z,
+      STAND_HEIGHT,
+      [this.body],
+    );
+  }
+
   private applyStance(crouching: boolean): void {
     if (this.crouching === crouching) return;
     this.crouching = crouching;
@@ -201,6 +214,7 @@ export class Player {
     const scaleY = crouching ? CROUCH_HEIGHT / STAND_HEIGHT : 1;
     this.body.scaling.y = scaleY;
     this.body.ellipsoid = new Vector3(0.35, half, 0.35);
+    this.body.collisionMask = crouching ? CROUCH_COLLISION_MASK : -1;
   }
 
   private syncCamera(): void {
