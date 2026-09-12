@@ -41,7 +41,9 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints (usually `http://localhost:5173`). On a phone on the same LAN, use your machine’s LAN IP (Vite is bound with `host: true`).
+Open the URL Vite prints (usually `http://localhost:5173`). Vite binds `0.0.0.0` and allows LAN hosts.
+
+On WSL2, Windows only forwards **localhost:5173** — a phone cannot use `http://<LAN-IP>:5173`. Forward that port on Windows (or a small TCP proxy) and open **`http://<LAN-IP>:3000/`** (this machine: `http://192.168.1.100:3000/`). Docker on `:8082` is already reachable on the LAN IP.
 
 ### Online lobby server (.NET 10, local)
 
@@ -55,7 +57,7 @@ Listens on `http://0.0.0.0:5080` (WebSocket path `/ws`). Use this together with 
 
 Then in the game: **Online** → create a room (pick Hider or Seeker) → share the code → guest joins → host taps **Start**. Both clients share the hide timer, see each other (~15 Hz poses), and catch / escape is decided on the server.
 
-On phones: left stick to move, drag the right side to look, hold **Sprint**, tap **Crouch** (stays crouched until you tap again). In landscape, Crouch sits next to the stick so you can duck and steer with the same thumb. No pointer lock required. Keyboard: WASD, Shift sprint, hold C to crouch. If a phone sleeps and the WebSocket drops, Online seats stay reserved for ~45s — the other player sees “reconnecting…”, then the match resumes when the phone wakes.
+On phones: left stick to move, drag the right side to look, hold **Sprint**, tap **Crouch** (stays crouched until you tap again). Crouch sits with Sprint on the right (portrait stacked, landscape A/B). No pointer lock required. Keyboard: WASD, Shift sprint, hold C to crouch. If a phone sleeps and the WebSocket drops, Online seats stay reserved for ~45s — the other player sees “reconnecting…”, then the match resumes when the phone wakes.
 
 ### Modes
 
