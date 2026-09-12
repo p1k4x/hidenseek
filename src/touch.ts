@@ -23,7 +23,7 @@ export function prefersTouchControls(): boolean {
 
 /**
  * On-screen move stick (left), look drag (right), hold sprint, tap-toggle crouch.
- * Crouch sits with the stick so landscape play can duck and steer together.
+ * Crouch and Sprint sit together on the right as an A/B pair for the look thumb.
  * Keyboard/mouse still work when this is hidden.
  */
 export class TouchControls {
@@ -61,10 +61,12 @@ export class TouchControls {
           <div class="touch-stick-ring"></div>
           <div class="touch-stick-knob"></div>
         </div>
-        <button type="button" id="touchCrouch" class="touch-crouch" aria-pressed="false">Crouch</button>
       </div>
       <div id="touchLook" class="touch-look" aria-hidden="true"></div>
-      <button type="button" id="touchSprint" class="touch-sprint">Sprint</button>
+      <div class="touch-actions">
+        <button type="button" id="touchCrouch" class="touch-crouch" aria-pressed="false">Crouch</button>
+        <button type="button" id="touchSprint" class="touch-sprint">Sprint</button>
+      </div>
     `;
     document.body.appendChild(this.root);
 

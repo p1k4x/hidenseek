@@ -234,15 +234,27 @@
         position: absolute;
         left: max(0.85rem, env(safe-area-inset-left));
         bottom: max(0.85rem, env(safe-area-inset-bottom));
-        display: flex;
-        flex-direction: column-reverse;
-        align-items: flex-start;
-        gap: 0.7rem;
         pointer-events: none;
         z-index: 2;
       }
 
       .touch-left > * {
+        pointer-events: auto;
+      }
+
+      .touch-actions {
+        position: absolute;
+        right: max(0.85rem, env(safe-area-inset-right));
+        bottom: max(0.85rem, env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.65rem;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .touch-actions > * {
         pointer-events: auto;
       }
 
@@ -291,10 +303,10 @@
         touch-action: none;
         border: 2px solid rgba(232, 238, 252, 0.4);
         border-radius: 999px;
-        min-width: 4.6rem;
-        min-height: 3.15rem;
-        padding: 0.85rem 1.2rem;
-        font-size: 0.95rem;
+        min-width: 4.5rem;
+        min-height: 4.5rem;
+        padding: 0.7rem 0.85rem;
+        font-size: 0.88rem;
         font-weight: 650;
         color: #e8eefc;
         background: rgba(8, 14, 28, 0.45);
@@ -308,13 +320,6 @@
         outline: none;
       }
 
-      .touch-sprint {
-        position: absolute;
-        right: max(0.85rem, env(safe-area-inset-right));
-        bottom: max(0.85rem, env(safe-area-inset-bottom));
-        z-index: 2;
-      }
-
       .touch-sprint.active,
       .touch-crouch.active {
         background: rgba(125, 211, 252, 0.55);
@@ -323,22 +328,27 @@
       }
 
       @media (orientation: landscape) {
-        .touch-left {
+        .touch-actions {
           flex-direction: row;
-          align-items: flex-end;
-          gap: 0.85rem;
         }
 
         .touch-look {
           width: 48%;
           top: 0;
-          bottom: 4.6rem;
+          bottom: 5.6rem;
           height: auto;
         }
 
         .touch-sprint,
         .touch-crouch {
-          min-height: 2.9rem;
+          min-width: 4.1rem;
+          min-height: 4.1rem;
+          font-size: 0.82rem;
+        }
+
+        /* B-then-A: crouch sits slightly higher, sprint is the lower-right rest. */
+        .touch-crouch {
+          margin-bottom: 0.85rem;
         }
       }
 
