@@ -32,7 +32,7 @@ docker run -d \
 ```
 
 - Direct: `http://192.168.1.168:8082/`
-- Via the home portal: rebuild **portal** with `HIDE_UPSTREAM=http://192.168.1.168:8082`, then `http://192.168.1.168:8080/hide/`
+- Via the home portal: `http://192.168.1.168:8080/hide/` (no portal rebuild needed when updating this container; only set `HIDE_UPSTREAM=http://192.168.1.168:8082` if the portal is not already pointing here)
 
 ### Client (local)
 
