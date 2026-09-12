@@ -4,7 +4,9 @@ export default defineConfig({
   // Docker builds with VITE_BASE=./ so assets work at both :8082/ and /hide/.
   base: process.env.VITE_BASE || "/",
   server: {
-    host: true,
+    host: "0.0.0.0",
     port: 5173,
+    strictPort: true,
+    allowedHosts: true,
   },
 });
